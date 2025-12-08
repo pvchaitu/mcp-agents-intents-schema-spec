@@ -1,0 +1,167 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenMCPSpec",
+  "description": "Specification schema for MCP intents, parameters, responses, metadata, enumeration, lifecycle, testing, and analytics.",
+  "type": "object",
+  "properties": {
+    "openmcpspec": {
+      "type": "string",
+      "description": "Version of the OpenMCPSpec schema"
+    },
+    "info": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["title", "version"]
+    },
+    "server": {
+      "type": "object",
+      "description": "Connection details for MCP server autodiscovery.",
+      "properties": {
+        "name": { "type": "string" },
+        "hostname": { "type": "string" },
+        "port": { "type": "integer" },
+        "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss"] },
+        "base_path": { "type": "string" },
+        "endpoints": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" }
+        }
+      },
+      "required": ["name", "hostname", "port", "protocol"]
+    },
+    "intents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "parameters": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "description": { "type": "string" },
+                "required": { "type": "boolean" },
+                "default": {},
+                "pii": { "type": "boolean" },
+                "gdpr_sensitive": { "type": "boolean" },
+                "enum": { "type": "array", "items": { "type": "string" } },
+                "pattern": { "type": "string" },
+                "format": { "type": "string" },
+                "minimum": { "type": "number" },
+                "maximum": { "type": "number" },
+                "dependencies": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["name", "type"]
+            }
+          },
+          "responses": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "object",
+                "properties": {
+                  "schema": { "type": "object" },
+                  "examples": { "type": "array", "items": {} }
+                }
+              },
+              "error": {
+                "type": "object",
+                "properties": {
+                  "schema": { "type": "object" },
+                  "codes": { "type": "array", "items": { "type": "string" } },
+                  "recovery_hints": { "type": "array", "items": { "type": "string" } },
+                  "standardized": { "type": "boolean" }
+                }
+              }
+            }
+          },
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "roles": { "type": "array", "items": { "type": "string" } },
+              "security": { "type": "array", "items": { "type": "string" } },
+              "nlp_hints": { "type": "array", "items": { "type": "string" } },
+              "version": { "type": "string" },
+              "deprecated": { "type": "boolean" },
+              "sunset_date": { "type": "string", "format": "date" },
+              "migration_hint": { "type": "string" },
+              "rbac_scopes": { "type": "array", "items": { "type": "string" } },
+              "data_residency": { "type": "string", "enum": ["EU", "US", "APAC", "Global"] },
+              "audit_hooks": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["name", "parameters", "responses"]
+      }
+    },
+    "enumeration": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "categories": { "type": "array", "items": { "type": "string" } },
+            "roles": { "type": "array", "items": { "type": "string" } },
+            "deprecated": { "type": "boolean" }
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "cursor": { "type": "string" },
+            "limit": { "type": "integer" },
+            "has_more": { "type": "boolean" }
+          }
+        },
+        "versioning": {
+          "type": "object",
+          "properties": {
+            "schema_version": { "type": "string" },
+            "compatibility": { "type": "string" },
+            "migration_paths": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "capability_tags": { "type": "array", "items": { "type": "string" } },
+        "intent_groups": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "lifecycle": {
+      "type": "object",
+      "properties": {
+        "changelog": { "type": "array", "items": { "type": "string" } },
+        "compatibility": { "type": "string" }
+      }
+    },
+    "testing": {
+      "type": "object",
+      "properties": {
+        "mock_data": { "type": "object" },
+        "validation_cases": { "type": "array", "items": { "type": "string" } },
+        "bdd_cases": { "type": "array", "items": { "type": "string" } },
+        "conformance_tests": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "analytics": {
+      "type": "object",
+      "properties": {
+        "logging": { "type": "boolean" },
+        "metrics": { "type": "array", "items": { "type": "string" } },
+        "monitoring_hooks": { "type": "array", "items": { "type": "string" } },
+        "trace_id_support": { "type": "boolean" },
+        "usage_quota": { "type": "integer" },
+        "latency_sla_ms": { "type": "integer" }
+      }
+    }
+  },
+  "required": ["openmcpspec", "info", "server", "intents", "enumeration"]
+}
