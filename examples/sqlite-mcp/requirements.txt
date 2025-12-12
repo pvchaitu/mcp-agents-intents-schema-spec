@@ -1,0 +1,9 @@
+# Core LangChain Libraries
+langchain-core
+langchain-community
+
+# Agent Orchestration
+langgraph
+
+# YAML Configuration file parsing
+PyYAML
