@@ -5,12 +5,22 @@ import yaml
 from typing import TypedDict, Annotated, List
 from operator import itemgetter
 
-# Using pydantic's utility to create models dynamically
-from langchain_core.pydantic_v1 import BaseModel, Field, create_model 
+# --- FIX: Use standard Pydantic V2 imports (requires pydantic>=2.0) ---
+from pydantic import BaseModel, Field, create_model 
+# Note: Since BaseModel, Field, and create_model are now imported from standard pydantic, 
+# the previous code is compatible, but we must ensure the dependency is installed.
+# We no longer need the langchain_core.pydantic_v1 compatibility layer.
+
 from langchain_core.messages import BaseMessage, HumanMessage
 from langchain_community.chat_models import OllamaFunctions
 from langgraph.graph import StateGraph, END
 
+
+# --- CONFIGURATION (Should match config.yaml) ---
+# Global variable placeholders
+config = {} 
+llm = None
+tool_executor = None
 
 # --- UTILITY FUNCTIONS FOR CONFIGURATION ---
 
@@ -19,14 +29,13 @@ def load_config(config_path: str = "config.yaml"):
     if not os.path.exists(config_path):
         raise FileNotFoundError(f"Config file not found at: {config_path}")
     with open(config_path, 'r') as f:
-        config = yaml.safe_load(f)
+        loaded_config = yaml.safe_load(f)
     print("Configuration loaded successfully.")
-    return config
+    return loaded_config
 
 def create_pydantic_model_from_schema(intent_name: str, schema: dict) -> type[BaseModel]:
     """Dynamically creates a Pydantic model from a JSON schema intent definition."""
     
-    # Extract properties and required fields
     properties = schema['parameters']['properties']
     required = schema['parameters'].get('required', [])
     
@@ -34,31 +43,26 @@ def create_pydantic_model_from_schema(intent_name: str, schema: dict) -> type[Ba
     
     for prop_name, prop_schema in properties.items():
         field_type = str
-        # Simple type mapping
         if prop_schema.get('type') == 'integer':
             field_type = int
         elif prop_schema.get('type') == 'boolean':
             field_type = bool
         
         # Prepare the field definition (type, Field object)
-        field_definition = (field_type, Field(
-            prop_schema.get('default'), 
-            description=prop_schema.get('description')
-        ))
+        default_val = prop_schema.get('default')
+        field_kwargs = {"description": prop_schema.get('description')}
         
-        # If required, remove default from Field and make the type non-optional
         if prop_name in required:
-            field_definition = (field_type, Field(
-                ..., 
-                description=prop_schema.get('description')
-            ))
+            field_definition = (field_type, Field(..., **field_kwargs))
+        else:
+            field_definition = (field_type, Field(default=default_val, **field_kwargs))
 
         fields[prop_name] = field_definition
 
-    # Create the model dynamically
+    # Create the model dynamically using standard Pydantic V2 create_model
     ToolModel = create_model(
-        f'{intent_name.replace("_", "")}Tool',
-        __doc__=schema['description'],
+        f'{intent_name.replace("_", "").capitalize()}Tool',
+        __doc__=schema.get('description', f"Tool for the {intent_name} intent."),
         __base__=BaseModel,
         **fields
     )
@@ -73,7 +77,6 @@ def load_mcp_tools(spec_path: str) -> List[type[BaseModel]]:
         spec = json.load(f)
         
     tools = []
-    # Loop through all defined intents and create a Pydantic model for each
     for intent_name, intent_data in spec['intents'].items():
         try:
             ToolModel = create_pydantic_model_from_schema(intent_name, intent_data)
@@ -87,65 +90,23 @@ def load_mcp_tools(spec_path: str) -> List[type[BaseModel]]:
 # --- 1. MOCK SQLITE MCP SERVER (TOOL IMPLEMENTATION) ---
 
 class MockSQLiteServer:
-    """Simulates the mcp-server-sqlite functionality using sqlite3."""
     
     def __init__(self, db_path: str, tool_models: List[type[BaseModel]]):
         self.db_path = db_path
         self.connections = {}
-        self._setup_db()
-        # Tools are the dynamically loaded Pydantic models
+        # NOTE: Skipping internal _setup_db() call here, assuming create_db.py was run.
         self.tools = tool_models
 
-    def _setup_db(self):
-        """Creates the initial database file and populates it with data."""
-        conn = sqlite3.connect(self.db_path)
-        cursor = conn.cursor()
-        
-        cursor.execute("DROP TABLE IF EXISTS employees")
-        cursor.execute("""
-            CREATE TABLE employees (
-                id INTEGER PRIMARY KEY,
-                name TEXT NOT NULL,
-                salary INTEGER,
-                department TEXT
-            )
-        """)
-        
-        employees_data = [
-            ("Alice Johnson", 75000, "Sales"),
-            ("Bob Smith", 92000, "Engineering"),
-            ("Charlie Brown", 55000, "HR"),
-            ("Diana Prince", 120000, "Engineering"),
-            ("Ethan Hunt", 60000, "Sales"),
-            ("Fiona Glenanne", 110000, "Sales"),
-            ("George Clooney", 88000, "Marketing")
-        ]
-        cursor.executemany("INSERT INTO employees (name, salary, department) VALUES (?, ?, ?)", employees_data)
-        
-        cursor.execute("DROP TABLE IF EXISTS projects")
-        cursor.execute("""
-            CREATE TABLE projects (
-                project_id INTEGER PRIMARY KEY,
-                project_name TEXT NOT NULL,
-                budget REAL
-            )
-        """)
-        
-        conn.commit()
-        conn.close()
-        print(f"Database '{self.db_path}' created and populated.")
-
+    # Re-using the methods from the previous example (connect_database, get_catalog, etc.)
+    # These methods are not affected by the Pydantic version change.
+    
     def _get_conn(self, alias):
-        """Internal utility to get an active connection."""
         conn_info = self.connections.get(alias)
         if not conn_info:
             raise ValueError(f"Database alias '{alias}' not connected.")
         return conn_info['conn']
-    
-    # --- MCP Intent Implementations (Methods must match intent names) ---
 
     def connect_database(self, path: str, alias: str, readonly: bool = False):
-        """[Intent] Connects to the database."""
         try:
             conn = sqlite3.connect(path)
             self.connections[alias] = {'conn': conn, 'readonly': readonly}
@@ -154,8 +115,6 @@ class MockSQLiteServer:
             return f"Error connecting to database: {e}"
 
     def get_catalog(self, database_alias: str):
-        """[Intent] Returns a comprehensive schema catalog."""
-        # ... (implementation remains the same as previous examples)
         conn = self._get_conn(database_alias)
         cursor = conn.cursor()
         cursor.execute("SELECT name FROM sqlite_master WHERE type='table'")
@@ -168,8 +127,6 @@ class MockSQLiteServer:
         return json.dumps(catalog, indent=2)
 
     def get_table_info(self, database_alias: str, table_name: str, sample_rows: int = 5):
-        """[Intent] Retrieves detailed information about a specific table."""
-        # ... (implementation remains the same as previous examples)
         conn = self._get_conn(database_alias)
         cursor = conn.cursor()
         try:
@@ -185,8 +142,6 @@ class MockSQLiteServer:
             return f"Error retrieving table info: {e}"
 
     def execute_read_query(self, database_alias: str, query: str, limit: int = 100):
-        """[Intent] Executes a SELECT query."""
-        # ... (implementation remains the same as previous examples)
         conn = self._get_conn(database_alias)
         cursor = conn.cursor()
         try:
@@ -205,10 +160,8 @@ class MockSQLiteServer:
             return f"Unexpected Error: {e}"
 
     def execute_write_query(self, database_alias: str, query: str):
-        """[Intent] Executes a modifying query (DDL/DML)."""
-        # ... (implementation remains the same as previous examples)
         conn_info = self.connections.get(database_alias)
-        if conn_info['readonly']:
+        if conn_info.get('readonly'):
             return "Error: Database is connected in read-only mode. Cannot execute write queries."
         conn = conn_info['conn']
         cursor = conn.cursor()
@@ -220,7 +173,7 @@ class MockSQLiteServer:
             return f"SQLite Error while executing write query: {e}. Query: {query}"
 
 
-# --- 2. LANGGRAPH SETUP (LOGIC REMAINS THE SAME) ---
+# --- 2. LANGGRAPH SETUP ---
 
 class AgentState(TypedDict):
     query: str
@@ -228,9 +181,6 @@ class AgentState(TypedDict):
     tool_result: str
     final_answer: str
     messages: Annotated[List[BaseMessage], itemgetter("messages")]
-
-# Global placeholder for the LLM instance
-llm = None 
 
 def llm_node(state: AgentState):
     messages = state["messages"]
@@ -283,10 +233,9 @@ def build_graph(llm_instance):
     
     return workflow.compile()
 
-# --- 3. ACI COMPARISON LOGIC (Uses config values) ---
+# --- 3. ACI COMPARISON LOGIC ---
 
 def run_aci_test(agent_name: str, llm_instance: OllamaFunctions, test_cases: List[dict]):
-    """Runs a sequence of tests and scores argument correctness."""
     correct_arguments = 0
     graph = build_graph(llm_instance)
     
@@ -294,12 +243,15 @@ def run_aci_test(agent_name: str, llm_instance: OllamaFunctions, test_cases: Lis
     print(f"       Running ACI Test for: {agent_name}      ")
     print(f"=============================================")
     
-    if not server.connections.get(config['mcp_config']['db_alias']):
-        server.connect_database(config['mcp_config']['db_path'], config['mcp_config']['db_alias'], readonly=False)
-        print(f"Pre-connected '{config['mcp_config']['db_alias']}' for subsequent tests.")
+    db_alias = config['mcp_config']['db_alias']
+    db_path = config['mcp_config']['db_path']
+
+    if not tool_executor.connections.get(db_alias):
+        tool_executor.connect_database(db_path, db_alias, readonly=False)
+        print(f"Pre-connected '{db_alias}' for subsequent tests.")
 
     for i, case in enumerate(test_cases):
-        if i == 0 and config['mcp_config']['db_alias'] in server.connections:
+        if i == 0 and db_alias in tool_executor.connections:
             continue
             
         print(f"\n--- TEST CASE {case['step']} ---")
@@ -314,6 +266,8 @@ def run_aci_test(agent_name: str, llm_instance: OllamaFunctions, test_cases: Lis
             if tool_call and tool_call.get("name") == case["expected_tool"]:
                 generated_args = tool_call.get("args", {})
                 is_correct = True
+                
+                # Simple argument correctness check
                 for arg_name, expected_value in case["expected_args"].items():
                     if arg_name == "query":
                         if not isinstance(generated_args.get(arg_name), str) or not generated_args.get(arg_name).strip():
@@ -338,122 +292,122 @@ def run_aci_test(agent_name: str, llm_instance: OllamaFunctions, test_cases: Lis
 
 # --- 4. CONFIGURATION LOADING AND EXECUTION ---
 
-try:
-    # --- Load Configuration ---
-    config = load_config()
-    llm_conf = config['llm_config']
-    mcp_conf = config['mcp_config']
+if __name__ == "__main__":
+    try:
+        # --- Load Configuration ---
+        config = load_config()
+        llm_conf = config['llm_config']
+        mcp_conf = config['mcp_config']
 
-    # Set API Key in environment for OllamaFunctions
-    os.environ["OPENAI_API_KEY"] = llm_conf['api_key'] 
+        # Set API Key in environment for OllamaFunctions
+        os.environ["OPENAI_API_KEY"] = llm_conf['api_key'] 
 
-    # --- Load Dynamic Tools ---
-    mcp_tool_models = load_mcp_tools(mcp_conf['spec_path'])
-    
-    # --- Initialize Mock Server ---
-    server = MockSQLiteServer(mcp_conf['db_path'], mcp_tool_models)
-    tool_executor = server
+        # --- Load Dynamic Tools ---
+        mcp_tool_models = load_mcp_tools(mcp_conf['spec_path'])
+        
+        # --- Initialize Mock Server ---
+        tool_executor = MockSQLiteServer(mcp_conf['db_path'], mcp_tool_models)
 
-    # --- Define Test Cases (Uses config values for dynamic injection) ---
-    TEST_CASES = [
-        {
-            "user_query": f"Connect to the {mcp_conf['db_path']} file and set its alias to '{mcp_conf['db_alias']}'.",
-            "expected_tool": "connect_database",
-            "expected_args": {"path": mcp_conf['db_path'], "alias": mcp_conf['db_alias'], "readonly": False},
-            "step": 1
-        },
-        {
-            "user_query": f"What are the tables in the '{mcp_conf['db_alias']}' database?",
-            "expected_tool": "get_catalog",
-            "expected_args": {"database_alias": mcp_conf['db_alias']},
-            "step": 2
-        },
-        {
-            "user_query": "Get the top 5 employees with the highest salary from the 'employees' table.",
-            "expected_tool": "execute_read_query",
-            "expected_args": {
-                "database_alias": mcp_conf['db_alias'],
-                "query": "SELECT name, salary, department FROM employees ORDER BY salary DESC",
-                "limit": 5
+        # --- Define Test Cases ---
+        TEST_CASES = [
+            {
+                "user_query": f"Connect to the {mcp_conf['db_path']} file and set its alias to '{mcp_conf['db_alias']}'.",
+                "expected_tool": "connect_database",
+                "expected_args": {"path": mcp_conf['db_path'], "alias": mcp_conf['db_alias'], "readonly": False},
+                "step": 1
             },
-            "step": 3
-        },
-        {
-            "user_query": "What are the columns in the projects table in 'company_db'?",
-            "expected_tool": "get_table_info",
-            "expected_args": {"database_alias": mcp_conf['db_alias'], "table_name": "projects"},
-            "step": 4
-        }
-    ]
+            {
+                "user_query": f"What are the tables in the '{mcp_conf['db_alias']}' database?",
+                "expected_tool": "get_catalog",
+                "expected_args": {"database_alias": mcp_conf['db_alias']},
+                "step": 2
+            },
+            {
+                "user_query": "Get the top 5 employees with the highest salary from the 'employees' table.",
+                "expected_tool": "execute_read_query",
+                "expected_args": {
+                    "database_alias": mcp_conf['db_alias'],
+                    "query": "SELECT name, salary, department FROM employees ORDER BY salary DESC",
+                    "limit": 5
+                },
+                "step": 3
+            },
+            {
+                "user_query": "What are the columns in the projects table in 'company_db'?",
+                "expected_tool": "get_table_info",
+                "expected_args": {"database_alias": mcp_conf['db_alias'], "table_name": "projects"},
+                "step": 4
+            }
+        ]
 
-    # 4.1. Agent with FULL MCP CONTEXT (High Context)
-    llm_mcp_context = OllamaFunctions(
-        model=llm_conf['model'], 
-        base_url=llm_conf['base_url'], 
-        format=llm_conf['format'], 
-        keep_alive=llm_conf['keep_alive']
-    ).bind_tools(mcp_tool_models)
+        # 4.1. Agent with FULL MCP CONTEXT (High Context)
+        llm_mcp_context = OllamaFunctions(
+            model=llm_conf['model'], 
+            base_url=llm_conf['base_url'], 
+            format=llm_conf['format'], 
+            keep_alive=llm_conf['keep_alive']
+        ).bind_tools(mcp_tool_models)
 
-    # 4.2. Agent with MINIMAL CONTEXT (Low Context)
-    class MinimalExecuteTool(BaseModel):
-        """Executes a SQL query."""
-        db_alias: str = Field(description="The database alias.")
-        sql: str = Field(description="The SQL query to run.")
+        # 4.2. Agent with MINIMAL CONTEXT (Low Context)
+        class MinimalExecuteTool(BaseModel):
+            """Executes a SQL query."""
+            db_alias: str = Field(description="The database alias.")
+            sql: str = Field(description="The SQL query to run.")
 
-    llm_minimal_context = OllamaFunctions(
-        model=llm_conf['model'], 
-        base_url=llm_conf['base_url'], 
-        format=llm_conf['format'], 
-        keep_alive=llm_conf['keep_alive']
-    ).bind_tools([MinimalExecuteTool])
-
-
-    # --- ACI TEST EXECUTION ---
-
-    total_tests = len(TEST_CASES)
-    score_minimal = run_aci_test("LOW CONTEXT (NO MCP SPEC)", llm_minimal_context, TEST_CASES)
-    score_mcp = run_aci_test("HIGH CONTEXT (FULL MCP SPEC)", llm_mcp_context, TEST_CASES)
-
-    # Calculate and report ACI
-    aci_score = score_mcp - score_minimal
-    aci_percentage = (aci_score / total_tests) * 100 if total_tests > 0 else 0
-
-
-    print("\n\n#####################################################")
-    print("          ARGUMENT CORRECTNESS IMPROVEMENT (ACI) METRIC")
-    print("#####################################################")
-    print(f"Total Test Cases: {total_tests}")
-    print(f"Correct Arguments (Minimal Context): {score_minimal} / {total_tests}")
-    print(f"Correct Arguments (Full MCP Context): {score_mcp} / {total_tests}")
-    print(f"**ACI Score (Improvement in Correct Arguments): {aci_score}**")
-    print(f"**ACI Percentage: {aci_percentage:.2f}%** (Higher is better)")
-    print("#####################################################")
+        llm_minimal_context = OllamaFunctions(
+            model=llm_conf['model'], 
+            base_url=llm_conf['base_url'], 
+            format=llm_conf['format'], 
+            keep_alive=llm_conf['keep_alive']
+        ).bind_tools([MinimalExecuteTool])
 
 
-    # --- 5. FINAL RUN WITH HIGH CONTEXT (MCP) AGENT ---
+        # --- ACI TEST EXECUTION ---
 
-    print("\n\n--- RUNNING FINAL NLP QUERY WITH MCP AGENT ---")
-    final_graph = build_graph(llm_mcp_context)
-    final_query = f"Please connect to the {mcp_conf['db_path']} with alias '{mcp_conf['db_alias']}', then get the top 5 employees with the highest salary from the 'employees' table."
+        total_tests = len(TEST_CASES)
+        score_minimal = run_aci_test("LOW CONTEXT (NO MCP SPEC)", llm_minimal_context, TEST_CASES)
+        score_mcp = run_aci_test("HIGH CONTEXT (FULL MCP SPEC)", llm_mcp_context, TEST_CASES)
 
-    final_state = final_graph.invoke({"messages": [HumanMessage(content=final_query)]})
+        # Calculate and report ACI
+        aci_score = score_mcp - score_minimal
+        aci_percentage = (aci_score / total_tests) * 100 if total_tests > 0 else 0
 
-    print("\n\n#####################################################")
-    print("          FINAL RESULT FROM MCP LANGGRAPH")
-    print("#####################################################")
-    print(f"Query: {final_query}")
-    print(f"Final Answer:")
-    print(final_state['final_answer'])
-    print("#####################################################")
 
-except FileNotFoundError as e:
-    print(f"\n\nFATAL ERROR: Configuration file missing. {e}")
-    print("Please ensure both 'config.yaml' and 'open_mcp_spec.json' are created.")
-except Exception as e:
-    print("\n\n#####################################################")
-    print("        ERROR: Configuration or Remote API Failed")
-    print("#####################################################")
-    print(f"An error occurred, likely related to configuration or the remote API call.")
-    print(f"Error details: {type(e).__name__}: {e}")
-    print(f"Ensure the remote Ollama service is running and accessible at '{llm_conf['base_url']}', and that the '{llm_conf['model']}' model is available.")
-    print("#####################################################")
+        print("\n\n#####################################################")
+        print("          ARGUMENT CORRECTNESS IMPROVEMENT (ACI) METRIC")
+        print("#####################################################")
+        print(f"Total Test Cases: {total_tests}")
+        print(f"Correct Arguments (Minimal Context): {score_minimal} / {total_tests}")
+        print(f"Correct Arguments (Full MCP Context): {score_mcp} / {total_tests}")
+        print(f"**ACI Score (Improvement in Correct Arguments): {aci_score}**")
+        print(f"**ACI Percentage: {aci_percentage:.2f}%** (Higher is better)")
+        print("#####################################################")
+
+
+        # --- 5. FINAL RUN WITH HIGH CONTEXT (MCP) AGENT ---
+
+        print("\n\n--- RUNNING FINAL NLP QUERY WITH MCP AGENT ---")
+        final_graph = build_graph(llm_mcp_context)
+        final_query = f"Please connect to the {mcp_conf['db_path']} with alias '{mcp_conf['db_alias']}', then get the top 5 employees with the highest salary from the 'employees' table."
+
+        final_state = final_graph.invoke({"messages": [HumanMessage(content=final_query)]})
+
+        print("\n\n#####################################################")
+        print("          FINAL RESULT FROM MCP LANGGRAPH")
+        print("#####################################################")
+        print(f"Query: {final_query}")
+        print(f"Final Answer:")
+        print(final_state['final_answer'])
+        print("#####################################################")
+
+    except FileNotFoundError as e:
+        print(f"\n\nFATAL ERROR: Configuration file missing. {e}")
+        print("Please ensure both 'config.yaml' and 'open_mcp_spec.json' are created.")
+    except Exception as e:
+        print("\n\n#####################################################")
+        print("        ERROR: Configuration or Remote API Failed")
+        print("#####################################################")
+        print(f"An error occurred, likely related to configuration or the remote API call.")
+        print(f"Error details: {type(e).__name__}: {e}")
+        print(f"Ensure the remote Ollama service is running, the model is available, and dependencies are installed with 'pip install -r requirements.txt'.")
+        print("#####################################################")

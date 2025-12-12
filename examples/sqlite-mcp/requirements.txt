@@ -1,9 +1,12 @@
-# Core LangChain Libraries
-langchain-core
-langchain-community
+# Core LangChain Libraries (using modern, stable versions)
+langchain-core>=0.1.30
+langchain-community>=0.0.30
 
 # Agent Orchestration
-langgraph
+langgraph>=0.0.60
+
+# Data Validation and Tool Definition (Pydantic V2)
+pydantic>=2.0.0 
 
 # YAML Configuration file parsing
 PyYAML
