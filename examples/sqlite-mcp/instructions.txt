@@ -1,0 +1,3 @@
+Run gen-company-db.py using command below to first have a sample db that works for the sqlite mcp server to work:
+
+python gen-company-db.py

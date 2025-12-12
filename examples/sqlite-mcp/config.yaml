@@ -1,0 +1,15 @@
+# config.yaml
+
+# LLM and API Configuration
+llm_config:
+  model: "qwen3-code:480b-cloud" # The LLM model to use
+  base_url: "https://ollama"     # The base URL for the remote Ollama service
+  api_key: "ollama-free-api-key-12345" # Pseudo API key (set this as OPENAI_API_KEY environment variable if needed)
+  keep_alive: "5m"
+  format: "json"
+
+# MCP Specification and Database Configuration
+mcp_config:
+  spec_path: "open_mcp_spec.json" # Path to the Open-MCP specification file
+  db_path: "company_data.db"      # Local path for the mock SQLite database file
+  db_alias: "company_db"          # The alias to use for the database connection

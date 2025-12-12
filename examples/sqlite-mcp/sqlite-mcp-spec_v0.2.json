@@ -1,0 +1,198 @@
+{
+  "openmcpspec": "0.2",
+  "info": {
+    "title": "SQLite Database Context Server",
+    "version": "1.0.0",
+    "description": "A comprehensive MCP server specification for mcp-server-sqlite, providing tools for connection management, full schema introspection, and both read-only and modifying SQL execution (CRUD/DDL)."
+  },
+  "server": {
+    "name": "sqlite",
+    "description": "The mcp-server-sqlite server.",
+    "protocol": "stdio",
+    "command": "uvx",
+    "args": [
+      "mcp-server-sqlite"
+    ],
+    "endpoints": []
+  },
+  "intents": {
+    "connect_database": {
+      "description": "Establishes a connection to a specific SQLite database file, optionally setting an alias for future reference.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "The absolute file path to the SQLite database file (e.g., '/home/user/data/mydatabase.db')."
+          },
+          "alias": {
+            "type": "string",
+            "description": "An optional, user-friendly name to reference this connection (defaults to the file name)."
+          },
+          "readonly": {
+            "type": "boolean",
+            "description": "If true, the connection is opened in read-only mode."
+          }
+        },
+        "required": [
+          "path"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "A confirmation message including the connection's assigned alias."
+      }
+    },
+    "close_connection": {
+      "description": "Closes the connection to a specific SQLite database, freeing up the resource.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database to close."
+          }
+        },
+        "required": [
+          "database_alias"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "A confirmation that the connection has been successfully closed."
+      }
+    },
+    "get_catalog": {
+      "description": "Retrieves a comprehensive catalog of the database, including all tables, views, and their full column definitions in a single call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database."
+          }
+        },
+        "required": [
+          "database_alias"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "A JSON or string representation of the complete database schema catalog."
+      }
+    },
+    "get_table_info": {
+      "description": "Retrieves detailed information about a specific table, including its schema, indexes, row count, and a small sample of data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database."
+          },
+          "table_name": {
+            "type": "string",
+            "description": "The name of the table to analyze."
+          },
+          "sample_rows": {
+            "type": "integer",
+            "description": "Optional: The number of sample rows to return (default: 5)."
+          }
+        },
+        "required": [
+          "database_alias",
+          "table_name"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "A structured output containing schema, row count, and sample data for the table."
+      }
+    },
+    "execute_read_query": {
+      "description": "Executes a read-only SQL SELECT query. This intent is safe for retrieving data without modification.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database."
+          },
+          "query": {
+            "type": "string",
+            "description": "The SQL SELECT query to be executed."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Optional: Maximum number of rows to return (default: 100)."
+          }
+        },
+        "required": [
+          "database_alias",
+          "query"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "The results of the query, formatted as a Markdown table or a JSON array."
+      }
+    },
+    "execute_write_query": {
+      "description": "Executes a modifying SQL query (INSERT, UPDATE, DELETE, or DDL like CREATE TABLE/DROP TABLE). Use with caution.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database."
+          },
+          "query": {
+            "type": "string",
+            "description": "The modifying SQL query (e.g., INSERT INTO..., UPDATE..., DELETE FROM..., CREATE TABLE...)."
+          }
+        },
+        "required": [
+          "database_alias",
+          "query"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "A confirmation message indicating success and the number of rows affected."
+      }
+    },
+    "create_view": {
+      "description": "Creates a new SQL view based on a SELECT query, which can be useful for simplifying complex data retrieval for the AI or external services.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_alias": {
+            "type": "string",
+            "description": "The alias of the connected database."
+          },
+          "view_name": {
+            "type": "string",
+            "description": "The name to assign to the new view."
+          },
+          "query": {
+            "type": "string",
+            "description": "The SQL SELECT query that defines the view's data."
+          },
+          "description": {
+            "type": "string",
+            "description": "An optional description of the view's purpose for context."
+          }
+        },
+        "required": [
+          "database_alias",
+          "view_name",
+          "query"
+        ]
+      },
+      "response": {
+        "type": "string",
+        "description": "Confirmation of the view creation."
+      }
+    }
+  }
+}
