@@ -8,16 +8,21 @@
   "server": {
     "name": "sqlite",
     "description": "The mcp-server-sqlite server.",
-    "protocol": "stdio",
+    "protocol": "http",
+    "hostname": "localhost",
+    "port": 8080,
+    "base_path": "/api/v1/sqlite",
     "command": "uvx",
     "args": [
       "mcp-server-sqlite"
     ],
     "endpoints": []
   },
-  "intents": {
-    "connect_database": {
+  "intents": [
+    {
+      "name": "connect_database",
       "description": "Establishes a connection to a specific SQLite database file, optionally setting an alias for future reference.",
+      "category": "Connection Management",
       "parameters": {
         "type": "object",
         "properties": {
@@ -38,13 +43,32 @@
           "path"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "A confirmation message including the connection's assigned alias."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "A confirmation message including the connection's assigned alias."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "roles": ["database_admin", "llm_executor"],
+        "nlp_hints": [
+          "connect to database [alias]",
+          "open the database file [path]",
+          "initialize database connection"
+        ]
       }
     },
-    "close_connection": {
+    {
+      "name": "close_connection",
       "description": "Closes the connection to a specific SQLite database, freeing up the resource.",
+      "category": "Connection Management",
       "parameters": {
         "type": "object",
         "properties": {
@@ -57,13 +81,31 @@
           "database_alias"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "A confirmation that the connection has been successfully closed."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "A confirmation that the connection has been successfully closed."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "nlp_hints": [
+          "disconnect from database",
+          "close database connection",
+          "terminate connection"
+        ]
       }
     },
-    "get_catalog": {
+    {
+      "name": "get_catalog",
       "description": "Retrieves a comprehensive catalog of the database, including all tables, views, and their full column definitions in a single call.",
+      "category": "Schema Introspection",
       "parameters": {
         "type": "object",
         "properties": {
@@ -76,13 +118,33 @@
           "database_alias"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "A JSON or string representation of the complete database schema catalog."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "catalog_data": {
+                "type": "string",
+                "description": "A JSON or string representation of the complete database schema catalog."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "roles": ["schema_extractor", "llm_agent"],
+        "nlp_hints": [
+          "what tables are available",
+          "show me the database schema",
+          "list all columns",
+          "database structure"
+        ]
       }
     },
-    "get_table_info": {
+    {
+      "name": "get_table_info",
       "description": "Retrieves detailed information about a specific table, including its schema, indexes, row count, and a small sample of data.",
+      "category": "Schema Introspection",
       "parameters": {
         "type": "object",
         "properties": {
@@ -104,13 +166,31 @@
           "table_name"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "A structured output containing schema, row count, and sample data for the table."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "table_data": {
+                "type": "string",
+                "description": "A structured output containing schema, row count, and sample data for the table."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "nlp_hints": [
+          "what are the columns in [table_name]",
+          "show me sample data from [table_name]",
+          "how many rows in [table_name]"
+        ]
       }
     },
-    "execute_read_query": {
+    {
+      "name": "execute_read_query",
       "description": "Executes a read-only SQL SELECT query. This intent is safe for retrieving data without modification.",
+      "category": "Data Retrieval",
       "parameters": {
         "type": "object",
         "properties": {
@@ -120,7 +200,7 @@
           },
           "query": {
             "type": "string",
-            "description": "The SQL SELECT query to be executed."
+            "description": "The SQL SELECT query to be executed. MUST be valid SQLite."
           },
           "limit": {
             "type": "integer",
@@ -132,13 +212,34 @@
           "query"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "The results of the query, formatted as a Markdown table or a JSON array."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "query_results": {
+                "type": "string",
+                "description": "The results of the query, formatted as a JSON array."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "roles": ["data_analyst", "sql_executor"],
+        "nlp_hints": [
+          "query for data",
+          "fetch records",
+          "get information from table",
+          "show me [X] from [Y] table",
+          "retrieve data"
+        ]
       }
     },
-    "execute_write_query": {
+    {
+      "name": "execute_write_query",
       "description": "Executes a modifying SQL query (INSERT, UPDATE, DELETE, or DDL like CREATE TABLE/DROP TABLE). Use with caution.",
+      "category": "Data Modification",
       "parameters": {
         "type": "object",
         "properties": {
@@ -156,13 +257,33 @@
           "query"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "A confirmation message indicating success and the number of rows affected."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "A confirmation message indicating success and the number of rows affected."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "security": ["write_permission"],
+        "nlp_hints": [
+          "insert data into [table]",
+          "update records",
+          "delete from [table]",
+          "create a table"
+        ]
       }
     },
-    "create_view": {
+    {
+      "name": "create_view",
       "description": "Creates a new SQL view based on a SELECT query, which can be useful for simplifying complex data retrieval for the AI or external services.",
+      "category": "Schema Modification",
       "parameters": {
         "type": "object",
         "properties": {
@@ -189,10 +310,64 @@
           "query"
         ]
       },
-      "response": {
-        "type": "string",
-        "description": "Confirmation of the view creation."
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "message": {
+                "type": "string",
+                "description": "Confirmation of the view creation."
+              }
+            }
+          }
+        }
+      },
+      "metadata": {
+        "nlp_hints": [
+          "create a shortcut view for [query]",
+          "define a virtual table",
+          "make a SQL view"
+        ]
       }
     }
+  ],
+  "enumeration": {
+    "enabled": true,
+    "filters": {
+      "categories": ["Connection Management", "Schema Introspection", "Data Retrieval", "Data Modification", "Schema Modification"],
+      "roles": ["llm_executor", "sql_agent", "data_analyst"],
+      "deprecated": false
+    },
+    "versioning": {
+      "schema_version": "0.2",
+      "compatibility": "full",
+      "migration_paths": []
+    },
+    "capability_tags": ["sqlite", "sql", "data_access", "tool_use"],
+    "intent_groups": ["data_retrieval_and_modification"]
+  },
+  "lifecycle": {
+    "changelog": [
+      "v1.0.0: Initial release with connection and full CRUD support.",
+      "v1.0.1: Added `get_table_info` intent for detailed schema exploration.",
+      "v1.0.2: Converted to OpenMCPSpec v0.2 array format with `metadata` for ACI improvement."
+    ],
+    "compatibility": "fully backward-compatible with v1.0.0 tool implementations"
+  },
+  "testing": {
+    "validation_cases": [
+      "connect_database with non-existent path should return error",
+      "execute_read_query with correct SQL should return JSON array",
+      "execute_write_query should report rows affected"
+    ],
+    "conformance_tests": ["sqlite_sql_syntax_compliance", "readonly_mode_enforcement"]
+  },
+  "analytics": {
+    "logging": true,
+    "metrics": ["latency_ms", "intent_success_rate", "llm_query_accuracy_score"],
+    "trace_id_support": true,
+    "usage_quota": 100000,
+    "latency_sla_ms": 500
   }
 }

@@ -4,5 +4,8 @@ python gen-company-db.py
 We would then run requirements.txt:
 pip install -r requirements.txt
 
+pip install --upgrade pydantic langchain langchain-core langchain-community langgraph
+
 To run the tests:
 python sqlite-openmcp-eval-tests.py
+
