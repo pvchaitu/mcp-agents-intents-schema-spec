@@ -1,0 +1,335 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "openmcpspec": "v0.4.1",
+  "info": {
+    "title": "MCP Docs Server (Production)",
+    "version": "1.2.0",
+    "description": "Production-grade MCP server exposing intents for documentation search and retrieval. Compliant with OpenMCPSpec v0.4.1 standards for governance and reliability."
+  },
+  "server": {
+    "name": "docs-mcp",
+    "hostname": "docs.mcp.org",
+    "port": 443,
+    "protocol": "https",
+    "base_path": "/api/v1",
+    "endpoints": [
+      "https://docs.mcp.org/api/v1/invoke",
+      "https://docs.mcp.org/api/v1/stream",
+      "https://docs.mcp.org/api/v1/cancel"
+    ],
+    "auth": {
+      "methods": [
+        "jwt",
+        "api_key"
+      ],
+      "audience": "docs-mcp-service",
+      "jwks_uri": "https://auth.mcp.org/jwks",
+      "token_scopes": [
+        "docs:read",
+        "docs:search"
+      ],
+      "description": "Authentication is mandatory via JWT for internal services and API Key for authorized external agents."
+    }
+  },
+  "envelope": {
+    "request": {
+      "id": "string (uuid)",
+      "intent": "string",
+      "parameters": {},
+      "deadline_ms": 10000,
+      "idempotency_key": "optional-string",
+      "trace_id": "string (uuid)",
+      "session_id": "string (uuid)",
+      "cancellation_token": "string (uuid)"
+    },
+    "response": {
+      "id": "string (uuid)",
+      "status": "string (enum: success, error, cancelled)",
+      "result": {},
+      "trace_id": "string (uuid)",
+      "session_id": "string (uuid)"
+    },
+    "error": {
+      "$ref": "#/definitions/errorEnvelope"
+    },
+    "description": "All requests and responses are wrapped in this standardized envelope for transaction tracing, error handling, and session management."
+  },
+  "governance": {
+    "audit_logging": true,
+    "rbac_supported": true,
+    "data_classification": "Internal",
+    "llm_governance_rules": [
+      "Intent parameters must be validated against defined patterns before execution.",
+      "Sensitive information (PII/GDPR) from query parameters must be masked in audit logs.",
+      "Responses must adhere strictly to the defined JSON schema to ensure tool-calling reliability.",
+      "Only approved user roles (docs:search, docs:read) can invoke the respective intents."
+    ]
+  },
+  "metadata": {
+    "schema_evolution": {
+      "schema_version": "v0.4.1",
+      "compatibility": "backward-compatible with v0.3.0",
+      "migration_paths": [
+        "searchDocs (v1.1) -> advancedSearchDocs (v1.2)"
+      ]
+    },
+    "capability_tags": [
+      "search",
+      "retrieval",
+      "documentation",
+      "public-api"
+    ],
+    "intent_groups": [
+      "docs-basic",
+      "docs-advanced"
+    ],
+    "description": "General metadata for platform autodiscovery and compatibility checking."
+  },
+  "enumeration": {
+    "document_formats": {
+      "type": "string",
+      "values": [
+        "markdown",
+        "html",
+        "json"
+      ],
+      "description": "Supported output formats for retrieved documents."
+    },
+    "sort_order": {
+      "type": "string",
+      "values": [
+        "relevance",
+        "date_desc",
+        "title_asc"
+      ],
+      "description": "Supported sorting options for search results."
+    }
+  },
+  "intents": {
+    "searchDocs": {
+      "description": "Search documentation by keyword or phrase. Returns summarized results.",
+      "category": "documentation",
+      "version": "1.2",
+      "deprecated": false,
+      "max_latency_ms": 1500,
+      "returns_stream": false,
+      "parameters": [
+        {
+          "name": "query",
+          "type": "string",
+          "required": true,
+          "description": "Search term or phrase (e.g., 'installation guide' or 'API setup').",
+          "pattern": "^[a-zA-Z0-9\\s,\\.-]+$",
+          "pii": false,
+          "gdpr_sensitive": false,
+          "validation_notes": "Prevents injection attempts."
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "default": 10,
+          "description": "Max results to return.",
+          "minimum": 1,
+          "maximum": 50
+        },
+        {
+          "name": "sort_by",
+          "type": "string",
+          "required": false,
+          "description": "Field to sort the results by.",
+          "enum": {
+            "$ref": "#/enumeration/sort_order"
+          },
+          "default": "relevance"
+        }
+      ],
+      "response": {
+        "description": "A list of documentation search results.",
+        "schema": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/SearchResult"
+          }
+        }
+      }
+    },
+    "getDoc": {
+      "description": "Retrieve the full content of a specific documentation page by its unique ID.",
+      "category": "documentation",
+      "version": "1.0",
+      "deprecated": false,
+      "max_latency_ms": 800,
+      "returns_stream": false,
+      "parameters": [
+        {
+          "name": "doc_id",
+          "type": "string",
+          "required": true,
+          "description": "Unique identifier for the document.",
+          "pattern": "^doc-[0-9a-f]{8}$"
+        },
+        {
+          "name": "format",
+          "type": "string",
+          "required": false,
+          "description": "Desired output format for the document content.",
+          "enum": {
+            "$ref": "#/enumeration/document_formats"
+          },
+          "default": "markdown"
+        }
+      ],
+      "response": {
+        "description": "The full content of the requested document.",
+        "schema": {
+          "$ref": "#/definitions/DocumentContent"
+        }
+      }
+    }
+  },
+  "lifecycle": {
+    "changelog": [
+      "v1.2.0: Upgraded to OpenMCPSpec v0.4.1. Added governance, envelope, and detailed security auth.",
+      "v1.1.0: Added validation constraints and recovery hints (v0.3 compliance).",
+      "v1.0.0: Initial release with searchDocs and getDoc intents (v0.2 compliance)."
+    ],
+    "compatibility": "backward-compatible with v1.1.0"
+  },
+  "testing": {
+    "validation_cases": [
+      "searchDocs with empty query returns MCP-ERR-INVALID-REQUEST",
+      "getDoc with invalid doc_id format returns MCP-ERR-INVALID-REQUEST",
+      "searchDocs with limit > 50 returns MCP-ERR-INVALID-REQUEST"
+    ],
+    "bdd_cases": [
+      "Given a valid doc_id, When getDoc is called, Then return DocumentContent schema.",
+      "Given a keyword 'security', When searchDocs is called, Then return a list of SearchResult items sorted by relevance."
+    ],
+    "conformance_tests": [
+      "Intent max_latency_ms enforcement via monitoring hooks.",
+      "Authentication token scope enforcement (docs:read for getDoc).",
+      "Error taxonomy conformance for all expected failure scenarios."
+    ]
+  },
+  "analytics": {
+    "logging": true,
+    "metrics": [
+      "intent_latency_ms",
+      "intent_success_rate",
+      "search_result_count",
+      "document_byte_size"
+    ],
+    "monitoring_hooks": [
+      "otel_tracing",
+      "prometheus_metrics_exporter"
+    ],
+    "trace_id_support": true,
+    "usage_quota": 100000,
+    "latency_sla_ms": 1000,
+    "description": "Production-grade observability hooks and service level agreements (SLAs)."
+  },
+  "definitions": {
+    "errorEnvelope": {
+      "type": "object",
+      "description": "Standardized error schema with taxonomy.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "MCP-ERR-INVALID-REQUEST",
+            "MCP-ERR-AUTH-FAILED",
+            "MCP-ERR-QUOTA-EXCEEDED",
+            "MCP-ERR-CANCELLED",
+            "MCP-ERR-TIMEOUT",
+            "MCP-ERR-NOT-FOUND",
+            "MCP-ERR-UNSUPPORTED"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "details": {
+          "type": "object",
+          "description": "Intent-specific error payload data (e.g., validation errors)."
+        },
+        "retryable": {
+          "type": "boolean"
+        },
+        "correlation_id": {
+          "type": "string"
+        },
+        "recovery_hints": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        },
+        "standardized": {
+          "type": "boolean",
+          "default": true
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ]
+    },
+    "SearchResult": {
+      "type": "object",
+      "description": "Schema for a single document search result item.",
+      "properties": {
+        "doc_id": {
+          "type": "string",
+          "description": "The unique ID of the document."
+        },
+        "title": {
+          "type": "string",
+          "description": "The title of the document."
+        },
+        "snippet": {
+          "type": "string",
+          "description": "A relevant, short preview of the document content."
+        },
+        "relevance_score": {
+          "type": "number",
+          "format": "float"
+        },
+        "last_updated": {
+          "type": "string",
+          "format": "date-time"
+        }
+      },
+      "required": [
+        "doc_id",
+        "title",
+        "snippet",
+        "relevance_score"
+      ]
+    },
+    "DocumentContent": {
+      "type": "object",
+      "description": "Schema for the full content of a retrieved document.",
+      "properties": {
+        "doc_id": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "content": {
+          "type": "string",
+          "description": "The full text content of the document, formatted as requested (markdown/html)."
+        },
+        "format": {
+          "type": "string",
+          "description": "The format of the content (e.g., markdown)."
+        }
+      },
+      "required": [
+        "doc_id",
+        "content",
+        "format"
+      ]
+    }
+  }
+}

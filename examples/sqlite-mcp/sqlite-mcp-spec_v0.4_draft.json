@@ -1,0 +1,413 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OpenMCPSpec",
+    "description": "v0.4.1: Consolidated Specification (LLM Governance/ACI + System Reliability/V0.3 Envelope).",
+    "openmcpspec": "v0.4.1",
+    "info": {
+        "title": "SQLite MCP Server",
+        "version": "1.2.0",
+        "description": "MCP server providing SQLite database connection, schema introspection, and CRUD/DDL operations, compliant with OpenMCPSpec v0.4.1 standard."
+    },
+    "server": {
+        "name": "sqlite",
+        "hostname": "<server-hostname>",
+        "port": "<server-port>",
+        "protocol": "<protocol>",
+        "base_path": "<base-path>",
+        "endpoints": [
+            "<invoke-endpoint-uri>",
+            "<stream-endpoint-uri>",
+            "<cancel-endpoint-uri>"
+        ],
+        "auth": {
+            "methods": [
+                "jwt"
+            ],
+            "audience": "<audience-identifier>",
+            "jwks_uri": "<jwks-uri>",
+            "token_scopes": [
+                "db:read",
+                "db:write"
+            ]
+        }
+    },
+    "envelope": {
+        "request": {
+            "id": "string",
+            "intent": "string",
+            "parameters": {},
+            "deadline_ms": 5000,
+            "idempotency_key": "optional-string",
+            "trace_id": "trace-uuid",
+            "session_id": "session-uuid",
+            "cancellation_token": "cancel-uuid"
+        },
+        "response": {
+            "id": "string",
+            "status": "string",
+            "data": {},
+            "error": { "$ref": "#/definitions/errorEnvelope" },
+            "progress": { "pct": 0.5 },
+            "trace_id": "trace-uuid"
+        },
+        "stream_chunk": {
+            "id": "string",
+            "chunk_type": "string",
+            "payload": {},
+            "sequence": 1
+        }
+    },
+    "intents": [
+        {
+            "name": "connect_database",
+            "description": "Establishes a connection to a SQLite database file, making it accessible via an alias.",
+            "category": "connection",
+            "parameters": [
+                {
+                    "name": "db_path",
+                    "type": "string",
+                    "description": "The file path to the SQLite database on the server.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                },
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "A unique, short name to reference this connection in subsequent calls.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                },
+                {
+                    "name": "read_only",
+                    "type": "boolean",
+                    "description": "If true, the connection will only allow SELECT statements.",
+                    "required": false,
+                    "default": false,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": { "type": "string", "enum": ["connected"] },
+                            "alias": { "type": "string" }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "metadata": {
+                "roles": ["database_admin"],
+                "security": ["filesystem_access"],
+                "nlp_hints": ["connect", "open database", "create alias"]
+            }
+        },
+        {
+            "name": "execute_read_query",
+            "description": "Executes a SELECT query on the specified connection and returns the results as an array of objects.",
+            "category": "read",
+            "parameters": [
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "The connection alias to execute the query on.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                },
+                {
+                    "name": "query",
+                    "type": "string",
+                    "description": "The valid SQLite SELECT statement to execute.",
+                    "required": true,
+                    "pii": true,
+                    "gdpr_sensitive": true
+                },
+                {
+                    "name": "max_rows",
+                    "type": "integer",
+                    "description": "Maximum number of rows to return to prevent large payloads.",
+                    "required": false,
+                    "default": 100,
+                    "minimum": 1
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "rows": { "type": "array", "description": "The resulting data rows." },
+                            "columns": { "type": "array", "items": { "type": "string" } },
+                            "row_count": { "type": "integer" }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "metadata": {
+                "roles": ["database_user", "reporting"],
+                "security": ["read_only"],
+                "rbac_scopes": ["db:read"],
+                "audit_hooks": ["query_executed", "data_read"]
+            }
+        },
+        {
+            "name": "execute_write_query",
+            "description": "Executes an INSERT, UPDATE, DELETE, or PRAGMA statement. Only available for non-read-only connections.",
+            "category": "write",
+            "parameters": [
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "The connection alias.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                },
+                {
+                    "name": "query",
+                    "type": "string",
+                    "description": "The valid SQLite write statement (INSERT, UPDATE, DELETE).",
+                    "required": true,
+                    "pii": true,
+                    "gdpr_sensitive": true
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "rows_affected": { "type": "integer" }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "metadata": {
+                "roles": ["database_user"],
+                "security": ["write_required"],
+                "rbac_scopes": ["db:write"],
+                "audit_hooks": ["query_executed", "data_modified"]
+            }
+        },
+        {
+            "name": "get_catalog",
+            "description": "Retrieves a summary of all tables and views available in the database.",
+            "category": "introspection",
+            "parameters": [
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "The connection alias.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "tables": { "type": "array", "items": { "type": "string" } },
+                            "views": { "type": "array", "items": { "type": "string" } }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            }
+        },
+        {
+            "name": "get_table_info",
+            "description": "Retrieves the schema, row count, indexes, and a sample of data for a specific table or view.",
+            "category": "introspection",
+            "parameters": [
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "The connection alias.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                },
+                {
+                    "name": "table_name",
+                    "type": "string",
+                    "description": "The name of the table or view.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "schema": { "type": "string", "description": "The CREATE TABLE SQL statement." },
+                            "columns": { "type": "array", "items": { "type": "object", "properties": { "name": { "type": "string" }, "type": { "type": "string" }, "nullable": { "type": "boolean" } } } },
+                            "row_count": { "type": "integer" },
+                            "indexes": { "type": "array", "items": { "type": "string" } },
+                            "sample_data": { "type": "array", "description": "First 5 rows of data for LLM context." }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "metadata": {
+                "nlp_hints": ["describe table", "get schema", "show sample data"]
+            }
+        },
+        {
+            "name": "close_connection",
+            "description": "Closes an active database connection identified by its alias.",
+            "category": "connection",
+            "parameters": [
+                {
+                    "name": "alias",
+                    "type": "string",
+                    "description": "The connection alias to close.",
+                    "required": true,
+                    "pii": false,
+                    "gdpr_sensitive": false
+                }
+            ],
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "status": { "type": "string", "enum": ["disconnected"] },
+                            "alias": { "type": "string" }
+                        }
+                    }
+                },
+                "error": { "$ref": "#/definitions/errorEnvelope" }
+            }
+        }
+    ],
+    "enumeration": {
+        "enabled": true,
+        "filters": {
+            "categories": ["read", "write", "connection", "introspection"],
+            "roles": ["database_user", "database_admin"],
+            "deprecated": false
+        },
+        "pagination": {
+            "cursor": "not-applicable",
+            "limit": 100,
+            "has_more": false
+        },
+        "versioning": {
+            "schema_version": "1.2.0",
+            "compatibility": "backward-compatible with v1.0.0 (except error handling)",
+            "migration_paths": [
+                "v1.0.0: Initial compliance with OpenMCPSpec v0.2 with metadata improvements.",
+                "v1.1.0: Updated to OpenMCPSpec v0.3 with envelopes, error taxonomy, structured responses, RBAC, and audit hooks.",
+                "v1.2.0: Updated to OpenMCPSpec v0.4.1, adding PII/GDPR governance flags to parameters and the rich error payload schema to errorEnvelope."
+            ]
+        },
+        "capability_tags": [
+            "sqlite",
+            "sql",
+            "database",
+            "read",
+            "write",
+            "introspection",
+            "transactional"
+        ],
+        "intent_groups": ["sql-core", "db-management"]
+    },
+    "lifecycle": {
+        "changelog": [
+            "v1.2.0: Compliant with OpenMCPSpec v0.4.1. Added PII/GDPR flags to all parameters, especially sensitive SQL queries. Adopted rich error payload schema for better diagnostics.",
+            "v1.1.0: Compliant with OpenMCPSpec v0.3. Implemented Request/Response/Stream envelopes, standardized error taxonomy, and security/audit metadata.",
+            "v1.0.0: Initial compliance with OpenMCPSpec v0.2."
+        ],
+        "compatibility": "backward-compatible with v1.0.0 (with caution on error handling)"
+    },
+    "testing": {
+        "validation_cases": [
+            "connect_database with non-existent path returns MCP-ERR-NOT-FOUND",
+            "close_connection with invalid alias returns MCP-ERR-NOT-FOUND",
+            "get_catalog with valid alias returns schema catalog",
+            "get_table_info returns schema, indexes, row count, and sample data",
+            "execute_read_query with syntax error returns SQL-ERR-SYNTAX",
+            "execute_write_query with constraint violation returns SQL-ERR-CONSTRAINT",
+            "execute_write_query on a read_only connection returns SQL-ERR-READONLY",
+            "execute_read_query containing PII data is logged via audit hooks"
+        ],
+        "conformance_tests": [
+            "sqlite_sql_syntax_compliance",
+            "readonly_mode_enforcement",
+            "transaction_consistency",
+            "error_taxonomy_conformance",
+            "governance_flag_enforcement"
+        ]
+    },
+    "analytics": {
+        "logging": true,
+        "metrics": [
+            "latency_ms",
+            "intent_success_rate",
+            "rows_returned",
+            "rows_affected",
+            "llm_query_accuracy_score"
+        ],
+        "monitoring_hooks": [
+            "otel_tracing"
+        ],
+        "trace_id_support": true,
+        "usage_quota": 1000,
+        "latency_sla_ms": 1500
+    },
+    "definitions": {
+        "errorEnvelope": {
+            "type": "object",
+            "description": "Standardized error schema with taxonomy, including v0.4.1's rich error payload capability.",
+            "properties": {
+                "code": {
+                    "type": "string",
+                    "enum": [
+                        "MCP-ERR-INVALID-REQUEST",
+                        "MCP-ERR-AUTH-FAILED",
+                        "MCP-ERR-QUOTA-EXCEEDED",
+                        "MCP-ERR-CANCELLED",
+                        "MCP-ERR-TIMEOUT",
+                        "MCP-ERR-NOT-FOUND",
+                        "MCP-ERR-UNSUPPORTED",
+                        "SQL-ERR-SYNTAX",
+                        "SQL-ERR-READONLY",
+                        "SQL-ERR-LOCKED",
+                        "SQL-ERR-CONSTRAINT"
+                    ]
+                },
+                "message": { "type": "string" },
+                "details": {
+                    "type": "object",
+                    "description": "Intent-specific error payload data (e.g., failed SQL statement, line number)."
+                },
+                "payload_schema": {
+                    "type": "object",
+                    "description": "Optional: Defines the JSON Schema of the 'details' object for this specific error type (v0.4.1 feature)."
+                },
+                "retryable": { "type": "boolean" },
+                "correlation_id": { "type": "string" },
+                "recovery_hints": {
+                    "type": "array",
+                    "items": { "type": "string" },
+                    "description": "Suggested recovery actions such as retry, check SQL syntax, reduce load."
+                },
+                "standardized": { "type": "boolean", "default": true }
+            },
+            "required": ["code", "message"]
+        }
+    }
+}

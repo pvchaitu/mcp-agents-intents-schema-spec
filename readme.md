@@ -1,17 +1,17 @@
-# OpenMCPSpec Documentation (Version 0.2 – Standardized Draft)
+# **OpenMCPSpec Documentation (Version 0.4.1 – Production Standard)**
 
 ## **📖 Overview**
 
 OpenMCPSpec is a schema standard for Model Context Protocol (MCP) servers and agents.  
-It defines how intents, parameters, responses, metadata, enumeration, and server connection details are described, enabling agents to autodiscover and interact with MCP servers in a consistent way.  
-This document explains the schema in detail and provides guidance for implementers to derive compliant specifications.
+It defines how intents, parameters, responses, metadata, enumeration, and server connection details are described, enabling large language model (LLM) agents to autodiscover and interact with MCP servers in a consistent and secure way.  
+This specification is designed to support **System Reliability** (via standardized envelopes and tracing) and **LLM Governance** (via explicit data sensitivity flags) required for production implementations.
 
 ## **🧩 Schema Sections**
 
 ### **1\. openmcpspec**
 
 * **Type:** string  
-* **Purpose:** Version of the OpenMCPSpec schema (e.g., "0.2.0").  
+* **Purpose:** Version of the OpenMCPSpec schema (e.g., "v0.4.1").  
 * **Usage:** Ensures compatibility between agents and servers.
 
 ### **2\. info**
@@ -26,97 +26,114 @@ This document explains the schema in detail and provides guidance for implemente
 ### **3\. server**
 
 * **Type:** object  
-* **Purpose:** Connection details for autodiscovery.  
+* **Purpose:** Connection and Security details for autodiscovery.  
 * **Fields:**  
   * name (string, required): Identifier for the server.  
   * hostname (string, required): Hostname (e.g., docs.mcp.org).  
   * port (integer, required): Port number (e.g., 443).  
-  * protocol (string, required): One of http, https, ws, wss.  
-  * base\_path (string): Base API path (e.g., /api).  
-  * endpoints (array of URIs): Specific endpoints (e.g., /intents, /enumerate).
+  * protocol (string, required): Transport protocol (http, https, ws, wss).  
+  * base\_path (string): Base path for API endpoints (e.g., /api/v1).  
+  * endpoints (array of string/URI): List of entry points for the server.  
+  * **NEW auth (object):** Defines supported authentication methods (V0.3/V0.4.1 Feature).  
+    * methods (array of string): Allowed methods (mtls, oidc, jwt, hmac).  
+    * jwks\_uri (string/URI): URI for the JSON Web Key Set endpoint.  
+    * token\_scopes (array of string): Required OAuth/JWT scopes for access.
 
-### **4\. intents**
-
-* **Type:** array of objects  
-* **Purpose:** Defines operations (intents) the server supports.  
-* **Fields (Key Updates in v0.2):**  
-  * name (string, required), description (string), category (string).  
-  * **parameters** (array): Input parameters.  
-    * Includes core fields: name, type, description, required, default.  
-    * **Data Governance:** pii (boolean) and gdpr\_sensitive (boolean) fields are retained.  
-    * **Advanced Validation (NEW):** Added fields like enum, pattern, format, minimum, maximum, and dependencies to enable stricter, machine-readable validation constraints on input arguments.  
-  * **responses** (object): Defines success and error outputs.  
-    * error: Includes schema and error codes.  
-    * **Richer Error Handling (NEW):** Added recovery\_hints (suggestions for agents on failure) and a standardized flag for error responses.  
-  * **metadata** (object): Roles, security scopes, NLP hints, version, deprecated flag.  
-    * **Advanced Governance & Lifecycle (NEW):** Expanded with sunset\_date, migration\_hint, **rbac\_scopes** (Role-Based Access Control), **data\_residency** (e.g., EU, US), and **audit\_hooks** for compliance and long-term planning.
-
-### **5\. enumeration**
+### **4\. envelope (NEW SECTION)**
 
 * **Type:** object  
-* **Purpose:** Lightweight listing of available intents for discovery.  
-* **Fields (Key Updates in v0.2):**  
-  * enabled, filters, pagination.  
-  * versioning: Includes schema\_version, compatibility.  
-    * **Versioning Enhancement (NEW):** Added migration\_paths to explicitly guide agents between compatible versions.  
-  * **Discovery Enhancement (NEW):** Added **capability\_tags** and **intent\_groups** for finer-grained filtering and clustering of intents by the agent.
-
-### **6\. lifecycle**
-
-* **Type:** object  
-* **Purpose:** Tracks changes and compatibility.  
+* **Purpose:** Standardized wrapper for all request/response payloads to ensure reliability, tracing, and streaming in distributed production environments (V0.3/V0.4.1 Feature).  
 * **Fields:**  
-  * changelog (array of strings): Human-readable changes.  
-  * compatibility (string): Version compatibility notes.
+  * **request (object):** Fields used by the agent when calling the MCP server.  
+    * id (string): Unique request ID for auditing.  
+    * deadline\_ms (integer): Timeout for the request.  
+    * idempotency\_key (string): Key to ensure safe retries.  
+    * trace\_id (string): Distributed tracing identifier.  
+  * **response (object):** Fields returned by the MCP server.  
+    * status (string): Result status (success, error, partial).  
+    * error (ref): References the errorEnvelope definition for standardized error handling.  
+  * **stream\_chunk (object):** Defines the structure for real-time data streaming (e.g., LLM token streams or database row batches).  
+    * chunk\_type (string): Type of payload (token, row\_batch, log).  
+    * sequence (integer): Ordering of the chunk within the stream.
 
-### **7\. testing *(optional)***
+### **5\. intents**
+
+* **Type:** array  
+* **Purpose:** List of functional capabilities (actions) the server provides.
+
+#### **5.1. intents/parameters**
+
+This section defines the input requirements for an intent.
+
+* **Type:** array of objects **(V0.2 Structure Restored)**  
+* **Purpose:** Explicitly defines the contract and **governance flags** for each argument.  
+* **Critical Fields for LLM Governance & ACI (Argument Correctness Improvement):**  
+  * name, type, description, required, default.  
+  * **pii (boolean):** **(V0.2 Restoration)** Critical flag indicating if the parameter contains Personal Identifiable Information. Used for Compliance Pre-emption Rate (CPR) calculation and refusal by the LLM agent.  
+  * **gdpr\_sensitive (boolean):** **(V0.2 Restoration)** Critical flag indicating data subject to GDPR/CCPA regulations. Also used for CPR.  
+  * **Validation Fields:** enum, pattern, minimum, maximum, format. These enable ACI checks by the agent before the call is made.
+
+#### **5.2. intents/responses**
 
 * **Type:** object  
-* **Purpose:** Provides mock data and validation cases for developers.  
-* **Fields (Key Updates in v0.2):**  
-  * mock\_data, validation\_cases.  
-  * **Richer Test Specifications (NEW):** Added **bdd\_cases** (Behavior Driven Development specifications) and **conformance\_tests** for formal compliance testing.
+* **Purpose:** Defines the expected output structures for successful and failed execution.  
+  * success/schema (object): The JSON Schema for the successful data payload.  
+  * error (ref): References the standardized errorEnvelope definition.
 
-### **8\. analytics *(optional)***
+### **6\. definitions/errorEnvelope (NEW/UPDATED DEFINITION)**
 
 * **Type:** object  
-* **Purpose:** Observability hooks for production.  
-* **Fields (Key Updates in v0.2):**  
-  * logging, metrics, monitoring\_hooks.  
-  * **Deep Observability (NEW):** Added **trace\_id\_support** (boolean), **usage\_quota** (integer), and **latency\_sla\_ms** (Service Level Agreement for latency) to enhance runtime monitoring.
+* **Purpose:** Standardized taxonomy for handling system and domain errors across all intents.  
+* **Fields:**  
+  * code (string, enum): Categorical error code (e.g., MCP-ERR-AUTH-FAILED, SQL-ERR-SYNTAX). **(V0.3 Feature)**  
+  * message (string): Human-readable error message.  
+  * retryable (boolean): Flag for automated client retry logic.  
+  * correlation\_id (string): ID linking the error to internal logs.  
+  * **details (object):** The intent-specific error data payload.  
+  * **payload\_schema (object):** **(V0.4.1 Fix)** An optional JSON Schema that defines the structure of the **details** object for this specific error type, allowing for intent-specific rich error data within the standardized envelope.  
+  * recovery\_hints (array of string): Suggested actions for the client.
 
-## **✅ Core vs Optional (Updated)**
+### **7\. enumeration**
 
-| Section | Required | Purpose |
-| :---- | :---- | :---- |
-| openmcpspec | ✔ | Schema version |
-| info | ✔ | Server metadata |
-| server | ✔ | Connection details |
-| intents | ✔ | Full intent definitions |
-| enumeration | ✔ | Lightweight discovery |
-| lifecycle | Optional | Versioning & changelog |
-| testing | Optional | Developer validation |
-| analytics | Optional | Observability |
+* **Type:** object  
+* **Purpose:** Defines mechanisms for agents to efficiently discover available intents based on criteria.  
+* **Fields:** filters, pagination, versioning, capability\_tags, intent\_groups.
 
-## ---
+### **8\. lifecycle**
 
-**🗂️ Change Log**
+* **Type:** object  
+* **Purpose:** Defines metadata about the specification's management.  
+* **Fields:** changelog, compatibility.
 
-* **Version 0.2 (Standardized Draft) — *NEW***  
-  * **Richer Data Validation:** Expanded parameter definitions with JSON schema properties (enum, pattern, minimum, maximum, dependencies).  
-  * **Enhanced Governance:** Introduced rbac\_scopes, data\_residency, sunset\_date, and audit\_hooks in intent metadata.  
-  * **Improved Reliability:** Added recovery\_hints and a standardized flag to error responses.  
-  * **Advanced Discovery:** Added capability\_tags and intent\_groups to the enumeration section.  
-  * **Deeper Observability:** Added trace\_id\_support, usage\_quota, and latency\_sla\_ms to analytics.  
-  * **Formal Testing:** Introduced bdd\_cases and conformance\_tests fields.  
+### **9\. testing**
+
+* **Type:** object  
+* **Purpose:** Defines hooks and metadata for testing compliance and correctness.  
+* **Fields:** mock\_data, validation\_cases, bdd\_cases, conformance\_tests.
+
+### **10\. analytics**
+
+* **Type:** object  
+* **Purpose:** Defines hooks for monitoring and observability.  
+* **Fields:** logging, metrics, monitoring\_hooks, trace\_id\_support, usage\_quota, latency\_sla\_ms.
+
+## **⚙️ Changelog**
+
+* **Version 0.4.1 (Production Consolidation)**  
+  * **Consolidation:** Merged system reliability features from the V0.3 draft with the LLM governance features from V0.2.  
+  * **Error Fix:** Restored V0.2's rich error structure by introducing the payload\_schema field within the global errorEnvelope to define intent-specific error data schemas.  
+  * **Governance Reinstated:** Explicitly restored the array structure for intents/parameters including the critical pii and gdpr\_sensitive boolean flags, ensuring full Compliance Pre-emption (CPR) capabilities for agents.  
+  * **API Reliability:** Incorporated the top-level envelope for standard request/response/streaming protocols, including fields like idempotency\_key and trace\_id.  
+  * **Security Standardized:** Added the server/auth object to define explicit security contracts (mtls, oidc, jwt).  
+* **Version 0.2 (Standardized Draft)**  
+  * Established the base schema structure (openmcpspec, info, server, intents, enumeration).  
+  * Introduced mandatory LLM governance flags (pii, gdpr\_sensitive) and ACI fields (pattern, minimum, maximum) in parameters.  
 * **Version 0.1 (Initial Draft)**  
   * Established the base schema structure (openmcpspec, info, server, intents, enumeration).  
   * Added support for parameters, responses, and metadata.  
-  * Introduced optional sections (lifecycle, testing, analytics).  
-  * Provided a compliant example spec using the MCP Docs Server.  
-  * Published documentation in Markdown format for implementers.
+  * Introduced optional sections (lifecycle, testing, analytics).
 
-## ---
+## **\---**
 
 **👥 Contributors**
 
@@ -125,7 +142,7 @@ This document explains the schema in detail and provides guidance for implemente
 
 ## **🛣️ Roadmap (Updated)**
 
-### **Planned for Version 0.3**
+### **Planned for Version 0.5**
 
 * Support schema evolution with backward compatibility guidelines.  
 * Add plugin/module extension patterns (x\_extensions) for vendor-specific fields.  

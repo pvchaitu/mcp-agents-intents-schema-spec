@@ -1,0 +1,609 @@
+{
+    "openmcpspec": "0.3",
+    "info": {
+        "title": "SQLite MCP Server",
+        "version": "1.1.0",
+        "description": "MCP server providing SQLite database connection, schema introspection, and CRUD/DDL operations."
+    },
+    "server": {
+        "name": "sqlite",
+        "hostname": "<server-hostname>",
+        "port": "<server-port>",
+        "protocol": "<protocol>",
+        "base_path": "<base-path>",
+        "endpoints": [
+            "<invoke-endpoint-uri>",
+            "<stream-endpoint-uri>",
+            "<cancel-endpoint-uri>"
+        ],
+        "auth": {
+            "methods": [
+                "jwt"
+            ],
+            "audience": "<audience-identifier>",
+            "jwks_uri": "<jwks-uri>",
+            "token_scopes": [
+                "db:read",
+                "db:write"
+            ]
+        }
+    },
+    "envelope": {
+        "request": {
+            "id": "string",
+            "intent": "string",
+            "parameters": {},
+            "deadline_ms": 5000,
+            "idempotency_key": "optional-string",
+            "trace_id": "trace-uuid",
+            "session_id": "session-uuid",
+            "cancellation_token": "cancel-uuid"
+        },
+        "response": {
+            "id": "string",
+            "status": "success",
+            "data": {},
+            "error": null,
+            "progress": {
+                "pct": 100
+            },
+            "trace_id": "trace-uuid"
+        },
+        "stream_chunk": {
+            "id": "string",
+            "chunk_type": "row_batch",
+            "payload": {},
+            "sequence": 1
+        }
+    },
+    "intents": [
+        {
+            "name": "connect_database",
+            "description": "Establish a connection to a SQLite database file.",
+            "category": "Connection Management",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "path": {
+                        "type": "string",
+                        "description": "Absolute path to SQLite file"
+                    },
+                    "alias": {
+                        "type": "string",
+                        "description": "Optional alias name"
+                    },
+                    "readonly": {
+                        "type": "boolean",
+                        "description": "Open in read-only mode"
+                    }
+                },
+                "required": [
+                    "path"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "alias": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "SQL-ERR-READONLY",
+                    "message": "Database opened in read-only mode",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "database_admin",
+                    "llm_executor"
+                ],
+                "rbac_scopes": [
+                    "db:connect"
+                ],
+                "audit_hooks": [
+                    "connection_events"
+                ],
+                "nlp_hints": [
+                    "connect to database [alias]",
+                    "open the database file [path]",
+                    "initialize database connection"
+                ]
+            }
+        },
+        {
+            "name": "close_connection",
+            "description": "Closes the connection to a specific SQLite database.",
+            "category": "Connection Management",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string",
+                        "description": "Alias of the connected database"
+                    }
+                },
+                "required": [
+                    "database_alias"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "MCP-ERR-NOT-FOUND",
+                    "message": "Database alias not found",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "database_admin"
+                ],
+                "rbac_scopes": [
+                    "db:connect"
+                ],
+                "audit_hooks": [
+                    "connection_events"
+                ],
+                "nlp_hints": [
+                    "disconnect from database",
+                    "close database connection",
+                    "terminate connection"
+                ]
+            }
+        },
+        {
+            "name": "get_catalog",
+            "description": "Retrieve a catalog of all tables, views, and columns.",
+            "category": "Schema Introspection",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "database_alias"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "catalog_data": {
+                                "type": "object"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "MCP-ERR-NOT-FOUND",
+                    "message": "Database alias not found",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "schema_extractor",
+                    "llm_agent"
+                ],
+                "rbac_scopes": [
+                    "db:read"
+                ],
+                "audit_hooks": [
+                    "schema_events"
+                ],
+                "nlp_hints": [
+                    "what tables are available",
+                    "show me the database schema",
+                    "list all columns",
+                    "database structure"
+                ]
+            }
+        },
+        {
+            "name": "get_table_info",
+            "description": "Retrieve schema, indexes, row count, and sample data for a table.",
+            "category": "Schema Introspection",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string"
+                    },
+                    "table_name": {
+                        "type": "string"
+                    },
+                    "sample_rows": {
+                        "type": "integer",
+                        "default": 5
+                    }
+                },
+                "required": [
+                    "database_alias",
+                    "table_name"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "schema": {
+                                "type": "object"
+                            },
+                            "indexes": {
+                                "type": "array",
+                                "items": {
+                                    "type": "string"
+                                }
+                            },
+                            "row_count": {
+                                "type": "integer"
+                            },
+                            "sample": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "schema_extractor",
+                    "llm_agent"
+                ],
+                "rbac_scopes": [
+                    "db:read"
+                ],
+                "audit_hooks": [
+                    "schema_events"
+                ],
+                "nlp_hints": [
+                    "what are the columns in [table_name]",
+                    "show me sample data from [table_name]",
+                    "how many rows in [table_name]"
+                ]
+            }
+        },
+        {
+            "name": "execute_read_query",
+            "description": "Execute a SQL SELECT query safely.",
+            "category": "Data Retrieval",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string"
+                    },
+                    "query": {
+                        "type": "string"
+                    },
+                    "params": {
+                        "type": "array",
+                        "items": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean",
+                                "null"
+                            ]
+                        }
+                    },
+                    "limit": {
+                        "type": "integer",
+                        "default": 100
+                    }
+                },
+                "required": [
+                    "database_alias",
+                    "query"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "columns": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object",
+                                    "properties": {
+                                        "name": {
+                                            "type": "string"
+                                        },
+                                        "declared_type": {
+                                            "type": "string"
+                                        },
+                                        "nullable": {
+                                            "type": "boolean"
+                                        }
+                                    }
+                                }
+                            },
+                            "rows": {
+                                "type": "array",
+                                "items": {
+                                    "type": "object"
+                                }
+                            },
+                            "row_count": {
+                                "type": "integer"
+                            },
+                            "cursor": {
+                                "type": "string"
+                            },
+                            "has_more": {
+                                "type": "boolean"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "SQL-ERR-SYNTAX",
+                    "message": "Invalid SQL syntax",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "data_analyst",
+                    "sql_executor"
+                ],
+                "rbac_scopes": [
+                    "db:read"
+                ],
+                "audit_hooks": [
+                    "query_events"
+                ],
+                "nlp_hints": [
+                    "query for data",
+                    "fetch records",
+                    "get information from table",
+                    "show me [X] from [Y] table",
+                    "retrieve data"
+                ]
+            }
+        },
+        {
+            "name": "execute_write_query",
+            "description": "Execute modifying SQL (INSERT, UPDATE, DELETE, DDL).",
+            "category": "Data Modification",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string"
+                    },
+                    "query": {
+                        "type": "string"
+                    },
+                    "params": {
+                        "type": "array",
+                        "items": {
+                            "type": [
+                                "string",
+                                "number",
+                                "boolean",
+                                "null"
+                            ]
+                        }
+                    }
+                },
+                "required": [
+                    "database_alias",
+                    "query"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            },
+                            "rows_affected": {
+                                "type": "integer"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "SQL-ERR-CONSTRAINT",
+                    "message": "Constraint violation",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "sql_executor"
+                ],
+                "rbac_scopes": [
+                    "db:write"
+                ],
+                "audit_hooks": [
+                    "write_events"
+                ],
+                "security": [
+                    "write_permission"
+                ],
+                "nlp_hints": [
+                    "insert data into [table]",
+                    "update records",
+                    "delete from [table]",
+                    "create a table"
+                ]
+            }
+        },
+        {
+            "name": "create_view",
+            "description": "Create a new SQL view based on a SELECT query.",
+            "category": "Schema Modification",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "database_alias": {
+                        "type": "string"
+                    },
+                    "view_name": {
+                        "type": "string"
+                    },
+                    "query": {
+                        "type": "string"
+                    },
+                    "description": {
+                        "type": "string"
+                    }
+                },
+                "required": [
+                    "database_alias",
+                    "view_name",
+                    "query"
+                ]
+            },
+            "responses": {
+                "success": {
+                    "schema": {
+                        "type": "object",
+                        "properties": {
+                            "message": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                "error": {
+                    "code": "SQL-ERR-SYNTAX",
+                    "message": "Invalid SQL syntax in view definition",
+                    "retryable": false,
+                    "correlation_id": "trace-uuid"
+                }
+            },
+            "metadata": {
+                "roles": [
+                    "schema_extractor",
+                    "llm_agent"
+                ],
+                "rbac_scopes": [
+                    "db:write"
+                ],
+                "audit_hooks": [
+                    "schema_events"
+                ],
+                "nlp_hints": [
+                    "create a shortcut view for [query]",
+                    "define a virtual table",
+                    "make a SQL view"
+                ]
+            }
+        }
+    ],
+    "enumeration": {
+        "enabled": true,
+        "filters": {
+            "categories": [
+                "Connection Management",
+                "Schema Introspection",
+                "Data Retrieval",
+                "Data Modification",
+                "Schema Modification"
+            ],
+            "roles": [
+                "llm_executor",
+                "sql_agent",
+                "data_analyst"
+            ],
+            "deprecated": false
+        },
+        "pagination": {
+            "cursor": "string",
+            "limit": 50,
+            "has_more": true
+        },
+        "versioning": {
+            "schema_version": "0.3",
+            "compatibility": "full",
+            "migration_paths": []
+        },
+        "capability_tags": [
+            "sqlite",
+            "sql",
+            "data_access",
+            "tool_use"
+        ],
+        "intent_groups": [
+            "data_retrieval_and_modification"
+        ]
+    },
+    "lifecycle": {
+        "changelog": [
+            "v1.0.0: Initial release with connection and CRUD support.",
+            "v1.0.1: Added get_table_info intent for detailed schema exploration.",
+            "v1.0.2: Converted to OpenMCPSpec v0.2 with metadata improvements.",
+            "v1.1.0: Updated to OpenMCPSpec v0.3 with envelopes, error taxonomy, structured responses, RBAC, and audit hooks."
+        ],
+        "compatibility": "backward-compatible with v1.0.0"
+    },
+    "testing": {
+        "validation_cases": [
+            "connect_database with non-existent path returns MCP-ERR-NOT-FOUND",
+            "close_connection with invalid alias returns MCP-ERR-NOT-FOUND",
+            "get_catalog with valid alias returns schema catalog",
+            "get_table_info returns schema, indexes, row count, and sample data",
+            "execute_read_query with syntax error returns SQL-ERR-SYNTAX",
+            "execute_write_query with constraint violation returns SQL-ERR-CONSTRAINT",
+            "create_view with invalid SQL returns SQL-ERR-SYNTAX"
+        ],
+        "conformance_tests": [
+            "sqlite_sql_syntax_compliance",
+            "readonly_mode_enforcement",
+            "transaction_consistency",
+            "error_taxonomy_conformance"
+        ]
+    },
+    "analytics": {
+        "logging": true,
+        "metrics": [
+            "latency_ms",
+            "intent_success_rate",
+            "rows_returned",
+            "rows_affected",
+            "llm_query_accuracy_score"
+        ],
+        "monitoring_hooks": [
+            "otel_tracing"
+        ],
+        "trace_id_support": true,
+        "usage_quota": 100000,
+        "latency_sla_ms": 500
+    }
+}

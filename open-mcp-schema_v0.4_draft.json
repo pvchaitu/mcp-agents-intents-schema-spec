@@ -1,0 +1,269 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenMCPSpec",
+  "description": "v0.4.1: Consolidated Specification (LLM Governance/ACI + System Reliability/V0.3 Envelope).",
+  "type": "object",
+  "properties": {
+    "openmcpspec": {
+      "type": "string",
+      "description": "Version of the OpenMCPSpec schema",
+      "default": "v0.4.1"
+    },
+    "info": {
+      "type": "object",
+      "properties": {
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "description": { "type": "string" }
+      },
+      "required": ["title", "version"]
+    },
+    
+    "server": {
+      "type": "object",
+      "description": "Connection details for MCP server autodiscovery, including V0.3 security features.",
+      "properties": {
+        "name": { "type": "string" },
+        "hostname": { "type": "string" },
+        "port": { "type": "integer" },
+        "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss"] },
+        "base_path": { "type": "string" },
+        "endpoints": {
+          "type": "array",
+          "items": { "type": "string", "format": "uri" }
+        },
+        "auth": {
+          "type": "object",
+          "description": "Authentication and authorization methods supported (V0.3 Feature).",
+          "properties": {
+            "methods": { "type": "array", "items": { "type": "string", "enum": ["mtls","oidc","jwt","hmac"] } },
+            "audience": { "type": "string" },
+            "jwks_uri": { "type": "string", "format": "uri" },
+            "token_scopes": { "type": "array", "items": { "type": "string" } }
+          }
+        }
+      },
+      "required": ["name", "hostname", "port", "protocol"]
+    },
+
+    "envelope": {
+      "type": "object",
+      "description": "Standardized request/response envelopes for all MCP interactions (V0.3 Feature).",
+      "properties": {
+        "request": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "intent": { "type": "string" },
+            "parameters": { "type": "object" },
+            "deadline_ms": { "type": "integer" },
+            "idempotency_key": { "type": "string" },
+            "trace_id": { "type": "string" },
+            "session_id": { "type": "string" },
+            "cancellation_token": { "type": "string" }
+          },
+          "required": ["id","intent","parameters"]
+        },
+        "response": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "status": { "type": "string", "enum": ["success","error","partial"] },
+            "data": { "type": "object" },
+            "error": { "$ref": "#/definitions/errorEnvelope" },
+            "progress": { "type": "object", "properties": { "pct": { "type": "number" } } },
+            "trace_id": { "type": "string" }
+          },
+          "required": ["id","status"]
+        },
+        "stream_chunk": {
+          "type": "object",
+          "properties": {
+            "id": { "type": "string" },
+            "chunk_type": { "type": "string", "enum": ["token","row_batch","log","progress"] },
+            "payload": { "type": "object" },
+            "sequence": { "type": "integer" }
+          },
+          "required": ["id","chunk_type","payload","sequence"]
+        }
+      }
+    },
+
+    "intents": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          
+          "parameters": {
+            "type": "array",
+            "description": "Array of explicit parameter definitions (V0.2 structure restored for Governance/ACI).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": { "type": "string" },
+                "type": { "type": "string" },
+                "description": { "type": "string" },
+                "required": { "type": "boolean" },
+                "default": {},
+                
+                "pii": { "type": "boolean", "description": "V0.2 Governance Field: Indicates Personal Identifiable Information." },
+                "gdpr_sensitive": { "type": "boolean", "description": "V0.2 Governance Field: Indicates GDPR-sensitive data." },
+                
+                "enum": { "type": "array", "items": { "type": "string" } },
+                "pattern": { "type": "string" },
+                "format": { "type": "string" },
+                "minimum": { "type": "number" },
+                "maximum": { "type": "number" },
+                "dependencies": { "type": "array", "items": { "type": "string" } }
+              },
+              "required": ["name", "type"]
+            }
+          },
+          
+          "responses": {
+            "type": "object",
+            "properties": {
+              "success": {
+                "type": "object",
+                "properties": {
+                  "schema": { "type": "object" },
+                  "examples": { "type": "array", "items": {} }
+                }
+              },
+              "error": { "$ref": "#/definitions/errorEnvelope" }
+            }
+          },
+          
+          "metadata": {
+            "type": "object",
+            "properties": {
+              "roles": { "type": "array", "items": { "type": "string" } },
+              "security": { "type": "array", "items": { "type": "string" } },
+              "nlp_hints": { "type": "array", "items": { "type": "string" } },
+              "version": { "type": "string" },
+              "deprecated": { "type": "boolean" },
+              "sunset_date": { "type": "string", "format": "date" },
+              "migration_hint": { "type": "string" },
+              "rbac_scopes": { "type": "array", "items": { "type": "string" } },
+              "data_residency": { "type": "string", "enum": ["EU", "US", "APAC", "Global"] },
+              "audit_hooks": { "type": "array", "items": { "type": "string" } }
+            }
+          }
+        },
+        "required": ["name", "parameters", "responses"]
+      }
+    },
+
+    "enumeration": {
+      "type": "object",
+      "properties": {
+        "enabled": { "type": "boolean" },
+        "filters": {
+          "type": "object",
+          "properties": {
+            "categories": { "type": "array", "items": { "type": "string" } },
+            "roles": { "type": "array", "items": { "type": "string" } },
+            "deprecated": { "type": "boolean" }
+          }
+        },
+        "pagination": {
+          "type": "object",
+          "properties": {
+            "cursor": { "type": "string" },
+            "limit": { "type": "integer" },
+            "has_more": { "type": "boolean" }
+          }
+        },
+        "versioning": {
+          "type": "object",
+          "properties": {
+            "schema_version": { "type": "string" },
+            "compatibility": { "type": "string" },
+            "migration_paths": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "capability_tags": { "type": "array", "items": { "type": "string" } },
+        "intent_groups": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "lifecycle": {
+      "type": "object",
+      "properties": {
+        "changelog": { "type": "array", "items": { "type": "string" } },
+        "compatibility": { "type": "string" }
+      }
+    },
+
+    "testing": {
+      "type": "object",
+      "properties": {
+        "mock_data": { "type": "object" },
+        "validation_cases": { "type": "array", "items": { "type": "string" } },
+        "bdd_cases": { "type": "array", "items": { "type": "string" } },
+        "conformance_tests": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "analytics": {
+      "type": "object",
+      "properties": {
+        "logging": { "type": "boolean" },
+        "metrics": { "type": "array", "items": { "type": "string" } },
+        "monitoring_hooks": { "type": "array", "items": { "type": "string" } },
+        "trace_id_support": { "type": "boolean" },
+        "usage_quota": { "type": "integer" },
+        "latency_sla_ms": { "type": "integer" }
+      }
+    }
+  },
+
+  "required": ["openmcpspec", "info", "server", "intents", "enumeration"],
+
+  "definitions": {
+    "errorEnvelope": {
+      "type": "object",
+      "description": "Standardized error schema with taxonomy, including V0.2's intent-specific schema capability.",
+      "properties": {
+        "code": {
+          "type": "string",
+          "enum": [
+            "MCP-ERR-INVALID-REQUEST",
+            "MCP-ERR-AUTH-FAILED",
+            "MCP-ERR-QUOTA-EXCEEDED",
+            "MCP-ERR-CANCELLED",
+            "MCP-ERR-TIMEOUT",
+            "MCP-ERR-NOT-FOUND",
+            "MCP-ERR-UNSUPPORTED",
+            "SQL-ERR-SYNTAX",
+            "SQL-ERR-READONLY",
+            "SQL-ERR-LOCKED",
+            "SQL-ERR-CONSTRAINT"
+          ]
+        },
+        "message": { "type": "string" },
+        "details": { 
+          "type": "object",
+          "description": "Intent-specific error payload data (previously the V0.2 'schema' contents)."
+        },
+        "payload_schema": {
+          "type": "object",
+          "description": "Optional: Defines the JSON Schema of the 'details' object for this specific error type (Restores the V0.2 'schema' field capability)."
+        },
+        "retryable": { "type": "boolean" },
+        "correlation_id": { "type": "string" },
+        "recovery_hints": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Suggested recovery actions such as retry, check SQL syntax, reduce load."
+        },
+        "standardized": { "type": "boolean", "default": true }
+      },
+      "required": ["code", "message"]
+    }
+  }
+}
