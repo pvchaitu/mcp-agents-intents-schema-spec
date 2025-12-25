@@ -1,19 +1,14 @@
-# sqllite-openmcp-tests-v0.6.py
-# Updated: loads sqlite-mcp-spec_v0.8_staging.json instead of hard-coded MCP_FINANCE_TOOL_DEFINITION
+# sqllite-openmcp-tests-v0.7.py
+# Updated to use Ollama REST API (/api/chat) with Bearer token authentication
 
 import os
 import json
 import sqlite3
 import yaml
 import time
+import requests # Replaced ollama client with requests
 from typing import Dict, Any, Tuple
-
-try:
-    from ollama import Client
-    from requests import Session
-except ImportError:
-    print("Error: Required libraries not installed. Run 'pip install ollama requests'.")
-    exit()
+from requests import Session
 
 try:
     from yaml import CLoader as Loader, load
@@ -30,7 +25,7 @@ COMPANY_DB_SCHEMA = {
 
 def load_config(config_file: str) -> Dict[str, Any]:
     """
-    Loads configuration settings from a real config.yaml file.
+    Loads configuration settings from config.yaml.
     """
     try:
         with open(config_file, "r") as f:
@@ -40,7 +35,7 @@ def load_config(config_file: str) -> Dict[str, Any]:
         mcp_config = full_config.get("mcp_config", {})
 
         return {
-            "ollama_host": llm_config.get("base_url"),
+            "ollama_host": llm_config.get("base_url", "https://ollama.com"),
             "ollama_model": llm_config.get("model", "qwen3-coder:480b-cloud"),
             "api_key": llm_config.get("api_key"),
             "db_path": mcp_config.get("db_path", "company_data.db"),
@@ -51,8 +46,8 @@ def load_config(config_file: str) -> Dict[str, Any]:
     except Exception as e:
         print(f"Warning: Could not load config.yaml. Using defaults. Error: {e}")
         return {
-            "ollama_host": "http://localhost:11434",
-            "ollama_model": "llama2",
+            "ollama_host": "https://ollama.com",
+            "ollama_model": "qwen3-coder:480b-cloud",
             "api_key": None,
             "db_path": "company_data.db",
             "db_alias": "company_db",
@@ -97,22 +92,83 @@ def check_database_setup(conn: sqlite3.Connection, db_alias: str) -> bool:
     except sqlite3.OperationalError:
         return False
 
-# --- Ollama Client Setup ---
+# --- HTTP Request Logging Setup ---
 original_request = Session.request
 
 def logged_request(self, method: str, url: str, **kwargs: Any) -> Any:
-    print(f"\n--- OLLAMA REQUEST {method} {url} ---")
+    """Logs the details of the REST API call."""
+    print(f"\n--- 📞 OLLAMA REST REQUEST {method} {url} ---")
+    if 'json' in kwargs:
+        print(f"Payload: {json.dumps(kwargs['json'], indent=2)}")
+    if 'headers' in kwargs:
+        headers = kwargs['headers'].copy()
+        if 'Authorization' in headers:
+            headers['Authorization'] = "Bearer ******** (masked)"
+        print(f"Headers: {headers}")
     return original_request(self, method, url, **kwargs)
 
-def get_ollama_client(config: Dict[str, Any]) -> Client:
-    host = config.get("ollama_host", "http://localhost:11434")
-    api_key = config.get("api_key")
-    if api_key:
-        os.environ['OLLAMA_API_KEY'] = api_key
-    Session.request = logged_request
-    return Client(host=host)
+# Patch requests to log all outgoing calls
+Session.request = logged_request
 
-# --- Prompt Generation ---
+# --- Inference & Evaluation ---
+
+def run_ollama_inference(model: str, system_prompt: str, user_prompt: str, config: Dict[str, Any]) -> Tuple[str, float]:
+    """Runs inference via Ollama /api/chat REST endpoint."""
+    url = f"{config['ollama_host']}/api/chat"
+    headers = {
+        "Authorization": f"Bearer {config['api_key']}",
+        "Content-Type": "application/json"
+    }
+    
+    # Construct combined prompt for the content field as requested
+    full_prompt_text = f"{system_prompt}\nUSER REQUEST: {user_prompt}"
+    
+    payload = {
+        "model": model,
+        "messages": [
+            {
+                "role": "user",
+                "content": full_prompt_text
+            }
+        ],
+        "stream": False
+    }
+
+    start = time.time()
+    try:
+        response = requests.post(url, headers=headers, json=payload)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract response from the Chat API message structure
+        generated_text = data.get('message', {}).get('content', '').strip().split('\n')[0]
+        #print(f"\nInference response from LLM: {generated_text}\n")
+    except Exception as e:
+        print(f"REST API call failed: {e}")
+        generated_text = "TOOL_CALL_FAILED"
+        
+    end = time.time()
+    return generated_text, end - start
+
+def check_ollama_connectivity(config: Dict[str, Any]) -> bool:
+    """Verifies access to the REST API."""
+    print(f"\n--- Initial Check: Ollama REST Connectivity ({config['ollama_model']}) ---")
+    try:
+        url = f"{config['ollama_host']}/api/tags" # Standard tags check
+        headers = {"Authorization": f"Bearer {config['api_key']}"}
+        response = requests.get(url, headers=headers)
+        if response.status_code == 200:
+            print(f"✅ REST Connectivity Check Passed.")
+            return True
+        else:
+            print(f"❌ REST Check FAILED: {response.status_code} - {response.text}")
+            return False
+    except Exception as e:
+        print(f"❌ REST Check FAILED: {e}")
+        return False
+
+# --- Prompt Generation & Evaluation (Logic preserved from v0.6) ---
+
 def get_mcp_spec_prompt(intent_def: Dict[str, Any], full_spec: bool = True) -> str:
     if full_spec:
         return "// USE THE FOLLOWING OPENMCPSPEC CONTRACT:\n" + json.dumps(intent_def, indent=2) + "\n"
@@ -127,20 +183,6 @@ def get_mcp_spec_prompt(intent_def: Dict[str, Any], full_spec: bool = True) -> s
         }
         return "// USE THE FOLLOWING SIMPLE SPEC:\n" + json.dumps(simple_spec, indent=2) + "\n"
 
-# --- Inference & Evaluation ---
-def run_ollama_inference(client: Client, model: str, system_prompt: str, user_prompt: str) -> Tuple[str, float]:
-    full_prompt = system_prompt + "\nUSER REQUEST: " + user_prompt
-    start = time.time()
-    try:
-        response = client.generate(model=model, prompt=full_prompt, options={'temperature': 0.0})
-        generated_text = response['response'].strip().split('\n')[0]
-        print("\n Inference response from LLM:: "+generated_text+"\n");
-    except Exception as e:
-        print(f"Ollama call failed: {e}")
-        generated_text = "TOOL_CALL_FAILED"
-    end = time.time()
-    return generated_text, end - start
-
 def evaluate_tool_call(test_case: Dict[str, Any], generated_call: str, with_spec: bool) -> float:
     expected = test_case["expected_tool_call_w_spec"] if with_spec else test_case["expected_tool_call_wo_spec"]
     if generated_call == expected:
@@ -149,7 +191,7 @@ def evaluate_tool_call(test_case: Dict[str, Any], generated_call: str, with_spec
         return 1.0
     return 0.0
 
-# --- Test Cases ---
+# --- Test Data (Same as v0.6) ---
 TEST_CASES_SIMPLE_MCP = [
     {
         "name": "Simple Valid Call (Default Limit)",
@@ -192,7 +234,7 @@ TEST_CASES_ADVANCED_BENEFITS = [
 ]
 
 # --- Run Tests ---
-def run_tests(client: Client, config: Dict[str, Any], intent_def: Dict[str, Any]):
+def run_tests(config: Dict[str, Any], intent_def: Dict[str, Any]):
     SYSTEM_PROMPT_BASE = (
         "You are an expert LLM Agent whose sole purpose is to output a single, valid tool call "
         "based on the user's request. Output the function call exactly as a single line: "
@@ -200,7 +242,6 @@ def run_tests(client: Client, config: Dict[str, Any], intent_def: Dict[str, Any]
     )
 
     grouped_results = {}
-
     test_groups = [
         ("Simple OpenMCP Spec Tests for SQLite MCP server", TEST_CASES_SIMPLE_MCP),
         ("Advanced OpenMCP Spec Benefits Illustration Tests with SQLite", TEST_CASES_ADVANCED_BENEFITS)
@@ -213,18 +254,18 @@ def run_tests(client: Client, config: Dict[str, Any], intent_def: Dict[str, Any]
         for i, test in enumerate(tests):
             print(f"\n--- Running Test {i+1} of {len(tests)}: {test['name']} ({test['validation_rule']}) ---")
 
-            # --- Test WITHOUT spec (simulate minimal contract) ---
+            # --- Test WITHOUT spec ---
             tool_spec_wo = get_mcp_spec_prompt(intent_def, full_spec=False)
             system_prompt_wo = SYSTEM_PROMPT_BASE + "\n" + tool_spec_wo
-            generated_call_wo, time_wo = run_ollama_inference(client, config["ollama_model"], system_prompt_wo, test["nlp_query"])
+            generated_call_wo, time_wo = run_ollama_inference(config["ollama_model"], system_prompt_wo, test["nlp_query"], config)
             score_wo = evaluate_tool_call(test, generated_call_wo, with_spec=False)
             group_results["without_spec"]["scores"].append(score_wo)
             group_results["without_spec"]["times"].append(time_wo)
 
-            # --- Test WITH full spec (validation + governance) ---
+            # --- Test WITH spec ---
             tool_spec_w = get_mcp_spec_prompt(intent_def, full_spec=True)
             system_prompt_w = SYSTEM_PROMPT_BASE + "\n// AGENT'S CURRENT RBAC ROLE: 'user'\n" + tool_spec_w
-            generated_call_w, time_w = run_ollama_inference(client, config["ollama_model"], system_prompt_w, test["nlp_query"])
+            generated_call_w, time_w = run_ollama_inference(config["ollama_model"], system_prompt_w, test["nlp_query"], config)
             score_w = evaluate_tool_call(test, generated_call_w, with_spec=True)
             group_results["with_spec"]["scores"].append(score_w)
             group_results["with_spec"]["times"].append(time_w)
@@ -250,17 +291,22 @@ if __name__ == "__main__":
     # 1. Load configuration
     config = load_config("config.yaml")
     
-    # 2. Setup Ollama Client
-    client = get_ollama_client(config)
+    # 2. Check Database connectivity
+    db_conn, db_path = initialize_mock_database()
+    if not check_database_setup(db_conn, config["db_alias"]):
+        print("❌ Database Setup Failed.")
+        exit(1)
+
+    # 3. Check REST API connectivity
+    if not check_ollama_connectivity(config):
+        print("❌ Ollama REST API unreachable.")
+        exit(1)
     
-    # 3. Load the MCP specification (ensure this file exists!)
+    # 4. Load the MCP specification and start tests
     try:
         mcp_spec = load_mcp_spec(config["spec_path"])
-        # Assuming the intent name is 'search_financial_records' based on test cases
         intent_def = get_intent_definition(mcp_spec, "search_financial_records")
-        
-        # 4. Run the tests
-        results = run_tests(client, config, intent_def)
+        results = run_tests(config, intent_def)
         print("\nTesting Complete.")
     except Exception as e:
         print(f"Failed to start tests: {e}")
