@@ -1,0 +1,380 @@
+{
+  "openmcpspec": "v0.8.2",
+  "info": {
+    "title": "SQLite Professional MCP Server",
+    "version": "1.6.2",
+    "description": "Unified SQLite interface for schema introspection, safe CRUD, and DDL. Explicit ACI/CPR instrumentation (nlp_hints, parameter constraints, RBAC) and full error taxonomy for pre-emptive compliance. Enumerated discovery optimized for token economy and runtime negotiation. Features structural coercion maps and RBAC definitions.",
+    "compatibility": "^v0.8.0"
+  },
+
+  "server": {
+    "name": "sqlite-engine-pro",
+    "hostname": "localhost",
+    "port": 8080,
+    "protocol": "https",
+    "protocol_hint": "REST + SSE (streaming) supported",
+    "base_path": "/api/v1/db",
+    "capabilities": ["transactions", "async_callbacks", "sampling", "streaming"],
+    "auth": {
+      "methods": ["jwt"],
+      "audience": "<audience-identifier>",
+      "jwks_uri": "<jwks-uri>",
+      "global_scopes": ["db:read", "db:write", "db:admin"]
+    },
+    "rate_limits": {
+      "global": {
+        "limit": 1000,
+        "retry_after_hint_ms": 500
+      }
+    },
+    "state_policy": {
+      "session_ttl_ms": 3600000,
+      "persistence": "persistent"
+    },
+    "observability": {
+      "trace_header": "X-SQL-Correlation-ID",
+      "slos": {
+        "p95_ms": 50,
+        "availability": 0.9995
+      }
+    }
+  },
+
+  "envelope": {
+    "request": {
+      "id": "string",
+      "intent": "string",
+      "parameters": "object",
+      "deadline_ms": 10000,
+      "idempotency_key": "string",
+      "timestamp": "string",
+      "trace_id": "string",
+      "session_id": "string",
+      "cancellation_token": "string"
+    },
+    "response": {
+      "id": "string",
+      "status": "success|error|partial",
+      "data": "object",
+      "error": {
+        "code": "string",
+        "codes": ["string"],
+        "message": "string",
+        "details": "object",
+        "payload_schema": "object|null",
+        "retryable": false,
+        "correlation_id": "string",
+        "recovery_hints": ["string"],
+        "standardized": true
+      },
+      "progress": { "pct": 0.0 },
+      "trace_id": "string"
+    },
+    "stream_chunk": {
+      "id": "string",
+      "chunk_type": "token|row_batch|log|progress",
+      "payload": "object",
+      "sequence": 0
+    }
+  },
+
+  "governance": {
+    "pii_redaction": true,
+    "rbac_enforcement": "pre-emptive",
+    "definitions": {
+      "compliance:audit": "Required for audit_mode=true. Critical for regulatory reporting.",
+      "finance:read": "Required for basic search_fin operations.",
+      "hr:salary": "Required to view compensation-related fields like salary."
+    }
+  },
+
+  "intents": [
+    {
+      "name": "execute_query",
+      "description": "Executes a SQL statement against the SQLite database.",
+      "category": "data-query",
+      "nlp_hints": {
+        "cot_trigger": "Analyze the target table schema before constructing the query to ensure column type alignment.",
+        "token_optimization_level": 2,
+        "semantic_shorthand": "exec_sql",
+        "example_phrasing": [
+          "Find all users created in the last 24 hours.",
+          "Update the status of order ID 502 to 'shipped'."
+        ]
+      },
+      "parameters": [
+        {
+          "name": "sql",
+          "type": "string",
+          "description": "The raw SQLite query string.",
+          "required": true,
+          "pattern": "^(?i)(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|PRAGMA|ALTER|BEGIN|COMMIT|ROLLBACK).*",
+          "nlp_hints": { "example_phrasing": ["SELECT * FROM users LIMIT 10;"] }
+        },
+        {
+          "name": "read_only",
+          "type": "boolean",
+          "description": "Enforce read-only state. Required for safe SELECT/PRAGMA operations.",
+          "required": false,
+          "default": true
+        },
+        {
+          "name": "stream",
+          "type": "boolean",
+          "description": "Stream row batches for large result sets.",
+          "required": false,
+          "default": false
+        }
+      ],
+      "validation_logic": {
+        "rules": [
+          {
+            "if_param": "read_only",
+            "operator": "equals",
+            "value": true,
+            "description": "Strict rule: read_only=true restricts operations to SELECT/PRAGMA.",
+            "then_require": []
+          }
+        ]
+      },
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "columns": { "type": "array", "items": { "type": "string" } },
+              "rows": { "type": "array", "items": { "type": "array" } },
+              "changes": { "type": "integer" }
+            }
+          },
+          "examples": [{ "columns": ["id", "username"], "rows": [[1, "admin"]], "changes": 0 }]
+        },
+        "error": {
+          "code": "MCP-ERR-INVALID-REQUEST",
+          "codes": ["SQL-ERR-SYNTAX", "SQL-ERR-READONLY", "SQL-ERR-UNSUPPORTED-OP"],
+          "message": "Invalid SQL or policy violation.",
+          "recovery_hints": [
+            "Verify table existence using list_tables.",
+            "Ensure read_only is false for DML/DML operations.",
+            "Check standard SQLite syntax."
+          ],
+          "standardized": true
+        }
+      },
+      "metadata": {
+        "roles": ["user", "db_reader"],
+        "rbac_scopes": ["db:read"],
+        "version": "1.6.2",
+        "deprecated": false,
+        "audit_hooks": ["audit.exec_sql"]
+      },
+      "semantic_profile": { "idempotent": false, "side_effects": "Can modify database records." },
+      "operational_profile": { "avg_latency_ms": 15, "cost_units": 1 }
+    },
+    {
+      "name": "list_tables",
+      "description": "Returns a list of all tables in the database.",
+      "category": "introspection",
+      "nlp_hints": {
+        "cot_trigger": "Use first if you are unsure of the database structure.",
+        "semantic_shorthand": "ls_tables",
+        "example_phrasing": ["What tables exist?", "List all tables"]
+      },
+      "parameters": [],
+      "responses": {
+        "success": {
+          "schema": { "type": "array", "items": { "type": "string" } },
+          "examples": [["employees", "projects"]]
+        },
+        "error": {
+          "code": "MCP-ERR-NOT-FOUND",
+          "message": "Database not accessible.",
+          "standardized": true
+        }
+      },
+      "metadata": {
+        "roles": ["user", "db_reader"],
+        "rbac_scopes": ["db:read"],
+        "version": "1.6.2",
+        "audit_hooks": ["audit.introspection"]
+      },
+      "semantic_profile": { "idempotent": true },
+      "operational_profile": { "avg_latency_ms": 5, "cost_units": 1 }
+    },
+    {
+      "name": "describe_table",
+      "description": "Returns column names and types for a given table.",
+      "category": "introspection",
+      "nlp_hints": {
+        "cot_trigger": "Describe table before generating write queries.",
+        "semantic_shorthand": "desc_table",
+        "example_phrasing": ["Describe employees table"]
+      },
+      "parameters": [
+        {
+          "name": "table",
+          "type": "string",
+          "required": true,
+          "pattern": "^[A-Za-z_][A-Za-z0-9_]*$"
+        }
+      ],
+      "responses": {
+        "success": {
+          "schema": {
+            "type": "object",
+            "properties": {
+              "table": { "type": "string" },
+              "columns": { "type": "array", "items": { "type": "object" } }
+            }
+          },
+          "examples": [{ "table": "employees", "columns": [{"name": "id", "type": "INTEGER"}] }]
+        }
+      },
+      "metadata": { "roles": ["user", "db_reader"], "rbac_scopes": ["db:read"], "version": "1.6.2" },
+      "semantic_profile": { "idempotent": true },
+      "operational_profile": { "avg_latency_ms": 7, "cost_units": 1 }
+    },
+    {
+      "name": "search_financial_records",
+      "description": "Searches financial transaction records for a specific account_id.",
+      "category": "finance",
+      "nlp_hints": {
+        "cot_trigger": "Validate account_id pattern and required RBAC scopes (audit/salary) before execution.",
+        "token_optimization_level": 3,
+        "semantic_shorthand": "search_fin",
+        "coercion_map": {
+          "last week": "7d",
+          "yesterday": "1d",
+          "five": 5,
+          "ten": 10,
+          "fifty": 50
+        },
+        "normalization": {
+          "account_id": "Fix missing or misplaced hyphens (e.g., 'ABC 123456' -> 'ABC-123456')"
+        }
+      },
+      "parameters": [
+        {
+          "name": "account_id",
+          "type": "string",
+          "description": "Client account identifier.",
+          "required": true,
+          "pattern": "^[A-Z]{3}-[0-9]{6}$",
+          "pii": true,
+          "gdpr_sensitive": true
+        },
+        {
+          "name": "limit",
+          "type": "integer",
+          "description": "Max number of records to return (up to 50).",
+          "required": false,
+          "default": 10,
+          "minimum": 1,
+          "maximum": 50
+        },
+        {
+          "name": "time_range",
+          "type": "string",
+          "description": "ISO-8601 duration or relative string."
+        },
+        { "name": "summary", "type": "boolean", "default": false },
+        {
+          "name": "audit_mode",
+          "type": "boolean",
+          "description": "Requires 'compliance:audit' scope.",
+          "default": false
+        }
+      ],
+      "validation_logic": {
+        "rules": [
+          {
+            "if_param": "audit_mode",
+            "operator": "equals",
+            "value": true,
+            "description": "audit_mode=true requires 'compliance:audit' RBAC scope."
+          }
+        ]
+      },
+      "responses": {
+        "success": {
+          "schema": { "type": "object", "properties": { "transactions": { "type": "array" } } },
+          "examples": [{ "account_id": "CDE-555444", "count": 1, "transactions": [{"id": "txn-1"}] }]
+        },
+        "error": {
+          "code": "MCP-ERR-INVALID-REQUEST",
+          "codes": ["FIN-ERR-PATTERN", "FIN-ERR-LIMIT", "AUTH-ERR-SCOPE"],
+          "message": "Invalid format or insufficient scope.",
+          "recovery_hints": [
+            "Normalize account_id to ABC-123456 format.",
+            "Verify presence of 'compliance:audit' for audit requests."
+          ],
+          "standardized": true
+        }
+      },
+      "metadata": {
+        "roles": ["user", "analyst"],
+        "rbac_scopes": ["finance:read", "compliance:audit", "hr:salary"],
+        "version": "1.6.2",
+        "audit_hooks": ["audit.finance.search"]
+      },
+      "semantic_profile": { "idempotent": true },
+      "operational_profile": { "avg_latency_ms": 12, "cost_units": 2 }
+    }
+  ],
+
+  "enumeration": {
+    "enabled": true,
+    "facets": ["read", "write", "admin", "schema", "introspection", "finance"],
+    "intent_summary": { "name": "SQLite Core Operational Suite", "stability": "stable", "version": "1.6.2" },
+    "filters": { "categories": ["data-query", "introspection", "finance"], "roles": ["user", "db_reader", "analyst"], "deprecated": false },
+    "pagination": { "cursor": "", "limit": 50, "has_more": false },
+    "versioning": { "schema_version": "v0.8.2", "compatibility": "^v0.8.0", "migration_paths": ["v0.3 -> v0.8.2"] },
+    "capability_tags": ["aci", "cpr", "enumeration", "streaming"],
+    "intent_groups": ["sqlite_core", "finance_demo"]
+  },
+
+  "lifecycle": {
+    "changelog": [
+      "v1.6.2: Restored all profiles/examples; Integrated coercion_map and RBAC definitions.",
+      "v1.6.1: Added finance intent.",
+      "v1.6.0: Full v0.8 compliance."
+    ],
+    "deprecation_policy": { "sunset_window_days": 90, "migration_hint": "Use enumeration filters." },
+    "compatibility": "^v0.8.0"
+  },
+
+  "testing": {
+    "mock_data": {
+      "execute_query": { "columns": ["id", "username"], "rows": [[1, "admin"]] },
+      "search_financial_records": { "account_id": "LMN-000001", "transactions": [{"id": "txn-2001"}] }
+    },
+    "validation_cases": [
+      "execute_query: read_only=true must restrict to SELECT/PRAGMA",
+      "search_financial_records: account_id must match ^[A-Z]{3}-[0-9]{6}$",
+      "search_financial_records: limit must be <= 50"
+    ],
+    "bdd_cases": [
+      "Given a valid SELECT query, when executed, then return row data with column headers.",
+      "Given an INSERT query with read_only=true, when executed, then return SQL-ERR-READONLY.",
+      "Given audit_mode=true without compliance:audit scope, then refuse with MCP-ERR-AUTH-FAILED.",
+      "Given account_id=123456 (pattern violation), then refuse with FIN-ERR-PATTERN."
+    ],
+    "conformance_tests": [
+      {
+        "name": "RBAC Governance Refusal",
+        "intent": "search_financial_records",
+        "input": { "account_id": "ABC-123456", "audit_mode": true },
+        "expected": { "refusal_code": "AUTH-ERR-SCOPE" }
+      }
+    ]
+  },
+
+  "analytics": {
+    "logging": true,
+    "metrics": ["query_count", "latency_ms", "error_rate", "aci_score", "cpr_rate", "si_ms"],
+    "monitoring_hooks": ["hook.prometheus", "hook.otel"],
+    "trace_id_support": true,
+    "usage_quota": 100000,
+    "latency_sla_ms": 100
+  }
+}
