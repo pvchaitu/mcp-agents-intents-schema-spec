@@ -1,0 +1,165 @@
+{
+    "openmcpspec": "v0.8.1",
+    "info": {
+      "title": "SQLite Professional MCP Server",
+      "version": "1.6.0",
+      "description": "Unified SQLite interface providing schema introspection, safe CRUD, and DDL operations. Enhanced with v0.3 NLP_Hints for ACI scoring and v0.8 Governance logic.",
+      "compatibility": "^v0.8.0"
+    },
+    "server": {
+      "name": "sqlite-engine-pro",
+      "hostname": "localhost",
+      "port": 8080,
+      "protocol": "https",
+      "base_path": "/api/v1/db",
+      "capabilities": ["transactions", "async_callbacks", "sampling", "streaming"],
+      "auth": {
+        "methods": ["jwt"],
+        "audience": "<audience-identifier>",
+        "jwks_uri": "<jwks-uri>",
+        "global_scopes": ["db:read", "db:write", "db:admin"]
+      },
+      "rate_limits": {
+        "global": {
+          "limit": 1000,
+          "retry_after_hint_ms": 500
+        }
+      },
+      "state_policy": {
+        "session_ttl_ms": 3600000,
+        "persistence": "persistent"
+      },
+      "observability": {
+        "trace_header": "X-SQL-Correlation-ID",
+        "slos": {
+          "p95_ms": 50.0,
+          "availability": 0.9995
+        }
+      }
+    },
+    "envelope": {
+      "request": { "id": "string", "intent": "string", "timestamp": "string", "trace_id": "string" },
+      "response": { "request_id": "string", "status": "string", "payload": "object" }
+    },
+    "intents": [
+      {
+        "name": "execute_query",
+        "description": "Executes a SQL statement against the SQLite database.",
+        "category": "data-query",
+        "nlp_hints": {
+          "cot_trigger": "Analyze the schema of the target table before constructing the query to ensure column type alignment.",
+          "token_optimization_level": 2,
+          "semantic_shorthand": "exec_sql",
+          "example_phrasing": [
+            "Find all users created in the last 24 hours.",
+            "Update the status of order ID 502 to 'shipped'."
+          ]
+        },
+        "parameters": [
+          {
+            "name": "sql",
+            "type": "string",
+            "description": "The raw SQLite query string.",
+            "required": true,
+            "pattern": "^(?i)(SELECT|INSERT|UPDATE|DELETE|CREATE|DROP|PRAGMA|ALTER|BEGIN|COMMIT|ROLLBACK).*",
+            "nlp_hints": {
+              "example_phrasing": ["SELECT * FROM users LIMIT 10;"]
+            }
+          },
+          {
+            "name": "read_only",
+            "type": "boolean",
+            "description": "Enforce read-only state. Restores safety from v0.3.",
+            "default": true
+          }
+        ],
+        "validation_logic": {
+          "rules": [
+            {
+              "if_param": "read_only",
+              "operator": "equals",
+              "value": true,
+              "description": "Strict ACI Rule: Read-only transactions are restricted to SELECT/PRAGMA.",
+              "then_require": [] 
+            }
+          ]
+        },
+        "responses": {
+          "success": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "columns": { "type": "array", "items": { "type": "string" } },
+                "rows": { "type": "array", "items": { "type": "array" } },
+                "changes": { "type": "integer" }
+              }
+            }
+          },
+          "error": {
+            "code": "SQL-ERR-SYNTAX",
+            "message": "The SQL provided contains a syntax error or security violation.",
+            "recovery_hints": [
+              "Verify table existence using list_tables.",
+              "Ensure read_only is false for DDL/DML operations.",
+              "Check for standard SQLite syntax (e.g., limit, offset)."
+            ]
+          }
+        },
+        "semantic_profile": {
+          "idempotent": false,
+          "side_effects": "Can modify database records or schema."
+        },
+        "operational_profile": {
+          "avg_latency_ms": 15,
+          "cost_units": 1
+        }
+      },
+      {
+        "name": "list_tables",
+        "description": "Returns a list of all tables in the database. Essential for LLM context.",
+        "category": "introspection",
+        "nlp_hints": {
+          "cot_trigger": "Use this intent first if you are unsure of the database structure.",
+          "semantic_shorthand": "ls_tables"
+        },
+        "parameters": [],
+        "responses": {
+          "success": {
+            "schema": { "type": "array", "items": { "type": "string" } }
+          }
+        },
+        "semantic_profile": { "idempotent": true }
+      }
+    ],
+    "enumeration": {
+      "facets": ["read", "write", "admin", "schema", "introspection"],
+      "intent_summary": {
+        "name": "SQLite Core Operational Suite",
+        "stability": "stable",
+        "version": "1.6.0"
+      }
+    },
+    "governance": {
+      "pii_redaction": true
+    },
+    "lifecycle": {
+      "changelog": [
+        "v1.6.0: Full v0.8 compliance. Restored v0.3 nlp_hints for ACI.",
+        "v1.5.0: Initial v0.8 migration."
+      ]
+    },
+    "testing": {
+      "mock_data": {
+        "execute_query": { "columns": ["id", "username"], "rows": [[1, "admin"]] }
+      },
+      "bdd_cases": [
+        "Given a valid SELECT query, when executed, then return row data with column headers.",
+        "Given an INSERT query with read_only=true, when executed, then return SQL-ERR-READONLY."
+      ]
+    },
+    "analytics": {
+      "logging": true,
+      "metrics": ["query_count", "latency_ms", "error_rate", "aci_score"],
+      "latency_sla_ms": 100
+    }
+  }

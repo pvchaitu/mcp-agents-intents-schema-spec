@@ -1,0 +1,223 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OpenMCPSpec",
+    "description": "v0.5.0: High-Fidelity Agentic Spec. Preserves all V0.4 Governance/Auth while adding Stateful Lifecycle, OpenAPI Parity, and Operational Profiles.",
+    "type": "object",
+    "properties": {
+      "openmcpspec": { "type": "string", "default": "v0.5.0" },
+      "info": { "$ref": "#/definitions/infoBlock" },
+      "server": { "$ref": "#/definitions/serverConfig" },
+      "envelope": { "$ref": "#/definitions/protocolEnvelope" },
+      "intents": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/intentDefinition" }
+      },
+      "enumeration": { "$ref": "#/definitions/enumerationConfig" },
+      "lifecycle": { "$ref": "#/definitions/lifecycleConfig" },
+      "testing": { "$ref": "#/definitions/testingConfig" },
+      "analytics": { "$ref": "#/definitions/analyticsConfig" }
+    },
+  
+    "required": ["openmcpspec", "info", "server", "intents", "enumeration"],
+  
+    "definitions": {
+      "infoBlock": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["title", "version"]
+      },
+  
+      "serverConfig": {
+        "type": "object",
+        "description": "Connection and capability negotiation block (Restores V0.4 base_path/endpoints).",
+        "properties": {
+          "name": { "type": "string" },
+          "hostname": { "type": "string" },
+          "port": { "type": "integer" },
+          "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss", "sse"] },
+          "base_path": { "type": "string" },
+          "endpoints": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["streaming", "sampling", "elicitation", "transactions", "async_callbacks"] }
+          },
+          "state_policy": {
+            "type": "object",
+            "properties": {
+              "session_ttl_ms": { "type": "integer" },
+              "persistence": { "type": "string", "enum": ["ephemeral", "persistent", "hybrid"] }
+            }
+          },
+          "auth": { "$ref": "#/definitions/authConfig" }
+        },
+        "required": ["name", "hostname", "port", "protocol"]
+      },
+  
+      "authConfig": {
+        "type": "object",
+        "description": "Full Restoration of V0.4 security methods.",
+        "properties": {
+          "methods": { "type": "array", "items": { "type": "string", "enum": ["mtls","oidc","jwt","hmac"] } },
+          "audience": { "type": "string" },
+          "jwks_uri": { "type": "string", "format": "uri" },
+          "token_scopes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "protocolEnvelope": {
+        "type": "object",
+        "description": "Standardized envelopes for stateful interactions (Restores Trace ID/Cancellation).",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "intent": { "type": "string" },
+              "parameters": { "type": "object" },
+              "deadline_ms": { "type": "integer" },
+              "idempotency_key": { "type": "string" },
+              "trace_id": { "type": "string" },
+              "session_id": { "type": "string" },
+              "transaction_id": { "type": "string" },
+              "cancellation_token": { "type": "string" }
+            },
+            "required": ["id","intent","parameters"]
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "status": { "type": "string", "enum": ["success","error","partial","accepted"] },
+              "job_id": { "type": "string", "description": "For async polling references." },
+              "data": { "type": "object" },
+              "state_snapshot": { "type": "object" },
+              "progress": { "type": "object", "properties": { "pct": { "type": "number" } } },
+              "trace_id": { "type": "string" },
+              "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "required": ["id","status"]
+          },
+          "stream_chunk": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "chunk_type": { "type": "string", "enum": ["token","row_batch","log","progress"] },
+              "is_final": { "type": "boolean", "default": false },
+              "payload": { "type": "object" },
+              "sequence": { "type": "integer" }
+            }
+          }
+        }
+      },
+  
+      "intentDefinition": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "input_schema": { "type": "object", "description": "Full recursive JSON Schema for OpenAPI parity." },
+          "governance": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/definitions/parameterMetadata" },
+            "description": "Governance metadata (PII/GDPR) keyed by parameter names in the input_schema."
+          },
+          "semantic_profile": { "$ref": "#/definitions/semanticProfile" },
+          "operational_profile": { "$ref": "#/definitions/operationalProfile" },
+          "workflow_hints": { "$ref": "#/definitions/workflowHints" },
+          "responses": {
+            "type": "object",
+            "properties": {
+              "success": { "type": "object", "properties": { "schema": { "type": "object" } } },
+              "error": { "$ref": "#/definitions/errorEnvelope" }
+            }
+          },
+          "metadata": { "$ref": "#/definitions/intentMetadata" }
+        },
+        "required": ["name", "responses"]
+      },
+  
+      "parameterMetadata": {
+        "type": "object",
+        "description": "Preserves V0.4 Governance fields (PII, GDPR, Dependencies).",
+        "properties": {
+          "pii": { "type": "boolean" },
+          "gdpr_sensitive": { "type": "boolean" },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "audit_required": { "type": "boolean" }
+        }
+      },
+  
+      "semanticProfile": {
+        "type": "object",
+        "properties": {
+          "side_effects": { "type": "string", "enum": ["none", "reversible", "irreversible"] },
+          "idempotent": { "type": "boolean" },
+          "billing_impact": { "type": "boolean" },
+          "execution_model": { "type": "string", "enum": ["sync", "async", "long_running"] }
+        }
+      },
+  
+      "operationalProfile": {
+        "type": "object",
+        "properties": {
+          "avg_latency_ms": { "type": "integer" },
+          "p95_latency_ms": { "type": "integer" },
+          "cost_units": { "type": "integer" },
+          "quota_impact": { "type": "string", "enum": ["low", "medium", "high"] }
+        }
+      },
+  
+      "workflowHints": {
+        "type": "object",
+        "properties": {
+          "compensation_intent": { "type": "string" },
+          "requires_context": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "intentMetadata": {
+        "type": "object",
+        "description": "Restores V0.4 NLP Hints, RBAC, and Residency fields.",
+        "properties": {
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "nlp_hints": { "type": "array", "items": { "type": "string" } },
+          "data_residency": { "type": "string", "enum": ["EU", "US", "APAC", "Global"] },
+          "rbac_scopes": { "type": "array", "items": { "type": "string" } },
+          "deprecated": { "type": "boolean" },
+          "sunset_date": { "type": "string", "format": "date" }
+        }
+      },
+  
+      "errorEnvelope": {
+        "type": "object",
+        "description": "Standardized Error Taxonomy (Restores SQL errors and adds State errors).",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "MCP-ERR-INVALID-REQUEST", "MCP-ERR-AUTH-FAILED", "MCP-ERR-TIMEOUT",
+              "SQL-ERR-SYNTAX", "SQL-ERR-LOCKED", "SQL-ERR-CONSTRAINT",
+              "STATE-EXPIRED", "BUSINESS-RULE-VIOLATION", "PRECONDITION-FAILED"
+            ]
+          },
+          "message": { "type": "string" },
+          "details": { "type": "object" },
+          "payload_schema": { "type": "object" },
+          "retryable": { "type": "boolean" },
+          "recovery_hints": { "type": "array", "items": { "type": "string" } },
+          "correlation_id": { "type": "string" }
+        },
+        "required": ["code", "message"]
+      },
+  
+      "enumerationConfig": { "type": "object", "properties": { "enabled": { "type": "boolean" }, "intent_groups": { "type": "array", "items": { "type": "string" } } } },
+      "lifecycleConfig": { "type": "object", "properties": { "changelog": { "type": "array", "items": { "type": "string" } } } },
+      "testingConfig": { "type": "object", "properties": { "mock_data": { "type": "object" } } },
+      "analyticsConfig": { "type": "object", "properties": { "logging": { "type": "boolean" }, "latency_sla_ms": { "type": "integer" } } }
+    }
+  }

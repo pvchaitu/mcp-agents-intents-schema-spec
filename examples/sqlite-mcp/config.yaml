@@ -10,6 +10,6 @@ llm_config:
 
 # MCP Specification and Database Configuration
 mcp_config:
-  spec_path: "sqlite-mcp-spec_v0.2.json" # Path to the Open-MCP specification file
+  spec_path: "sqlite-mcp-spec_v0.8_staging.json" # Path to the Open-MCP specification file
   db_path: "company_data.db"      # Local path for the mock SQLite database file
   db_alias: "company_db"          # The alias to use for the database connection

@@ -1,0 +1,153 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "OpenMCPSpec",
+  "version": "v0.7.5",
+  "description": "Unified Master Spec: Integrated full JSON Schema responses, expanded logicRule operators, and enriched enumeration facets.",
+  "type": "object",
+  "required": ["openmcpspec", "info", "server", "intents", "enumeration"],
+  "properties": {
+    "openmcpspec": { "type": "string", "default": "v0.7.5" },
+    "info": { "$ref": "#/definitions/infoBlock" },
+    "server": { "$ref": "#/definitions/serverConfig" },
+    "envelope": { "$ref": "#/definitions/protocolEnvelope" },
+    "intents": {
+      "type": "array",
+      "items": { "$ref": "#/definitions/intentDefinition" }
+    },
+    "enumeration": { "$ref": "#/definitions/enumerationConfig" },
+    "governance": { "$ref": "#/definitions/governanceConfig" }
+  },
+
+  "definitions": {
+    "infoBlock": {
+      "type": "object",
+      "required": ["title", "version"],
+      "properties": {
+        "title": { "type": "string" },
+        "version": { "type": "string" },
+        "description": { "type": "string" }
+      }
+    },
+
+    "serverConfig": {
+      "type": "object",
+      "required": ["name", "hostname", "port", "protocol"],
+      "properties": {
+        "name": { "type": "string" },
+        "hostname": { "type": "string" },
+        "port": { "type": "integer" },
+        "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss", "sse", "other"] },
+        "protocol_hint": { "type": "string" },
+        "auth": { "$ref": "#/definitions/authConfig" },
+        "rate_limits": { "$ref": "#/definitions/rateLimitConfig" },
+        "observability": { "$ref": "#/definitions/observabilityConfig" }
+      }
+    },
+
+    "intentDefinition": {
+      "type": "object",
+      "required": ["name"],
+      "properties": {
+        "name": { "type": "string" },
+        "description": { "type": "string" },
+        "parameters": { "type": "array", "items": { "$ref": "#/definitions/parameterDefinition" } },
+        "responses": {
+          "type": "object",
+          "properties": {
+            "success": {
+              "type": "object",
+              "properties": {
+                "schema": {
+                  "description": "Accepts a full JSON Schema object (Draft-07+). Implementations MAY include $ref/$defs or reference external schema URIs.",
+                  "type": ["object", "boolean"],
+                  "additionalProperties": true
+                }
+              }
+            },
+            "error": { "$ref": "#/definitions/errorEnvelope" }
+          }
+        },
+        "validation_logic": {
+          "type": "object",
+          "properties": {
+            "rules": { "type": "array", "items": { "$ref": "#/definitions/logicRule" } }
+          }
+        },
+        "policy_refs": { "type": "array", "items": { "$ref": "#/definitions/policyRef" } }
+      }
+    },
+
+    "logicRule": {
+      "type": "object",
+      "required": ["if_param", "operator"],
+      "properties": {
+        "if_param": { "type": "string" },
+        "operator": {
+          "type": "string",
+          "enum": ["equals", "not_equals", "in", "not_in", "matches", "present", "not_present"],
+          "description": "Operator semantics: 'matches' uses regex string; 'in'/'not_in' expect array values."
+        },
+        "value": {
+          "type": ["string", "array", "boolean", "number"],
+          "description": "Array used for in/not_in; string (regex) for matches; single value for equals."
+        },
+        "then_require": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "policyRef": {
+      "type": "object",
+      "required": ["name", "engine_ref"],
+      "properties": {
+        "name": { "type": "string" },
+        "engine_ref": { "type": "string" },
+        "input_schema_hint": {
+          "type": ["object", "string"],
+          "description": "Optional: inline schema or URI describing policy input shape."
+        }
+      }
+    },
+
+    "enumerationConfig": {
+      "type": "object",
+      "properties": {
+        "strategy": { "type": "string" },
+        "facets": { "type": "array", "items": { "type": "string" } },
+        "intent_summary": {
+          "type": "object",
+          "properties": {
+            "name": { "type": "string" },
+            "short_description": { "type": "string" },
+            "stability": { "type": "string" },
+            "version": { "type": "string" },
+            "schema_ref": { "type": "string", "format": "uri" }
+          }
+        },
+        "conformance_tests": {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              { "type": "string" },
+              {
+                "type": "object",
+                "properties": {
+                  "id": { "type": "string" },
+                  "description": { "type": "string" },
+                  "uri": { "type": "string", "format": "uri" }
+                }
+              }
+            ]
+          }
+        }
+      }
+    },
+
+    "parameterDefinition": { "type": "object", "required": ["name", "type"], "properties": { "name": { "type": "string" }, "type": { "type": "string" }, "items": { "$ref": "#/definitions/parameterDefinition" }, "properties": { "type": "object", "additionalProperties": { "$ref": "#/definitions/parameterDefinition" } } } },
+    "authConfig": { "type": "object", "properties": { "methods": { "type": "array", "items": { "type": "string" } }, "global_scopes": { "type": "array", "items": { "type": "string" } } } },
+    "rateLimitConfig": { "type": "object", "properties": { "global": { "type": "object", "properties": { "retry_after_hint_ms": { "type": "integer" } } } } },
+    "observabilityConfig": { "type": "object", "properties": { "trace_header": { "type": "string" }, "slos": { "type": "object", "additionalProperties": { "type": "number" } } } },
+    "protocolEnvelope": { "type": "object", "properties": { "request": { "type": "object" }, "response": { "type": "object" } } },
+    "errorEnvelope": { "type": "object", "required": ["code", "message"], "properties": { "code": { "type": "string" }, "message": { "type": "string" } } },
+    "governanceConfig": { "type": "object", "properties": { "pii_redaction": { "type": "boolean" } } }
+  }
+}

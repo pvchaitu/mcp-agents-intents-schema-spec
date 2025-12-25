@@ -214,11 +214,7 @@
             "MCP-ERR-CANCELLED",
             "MCP-ERR-TIMEOUT",
             "MCP-ERR-NOT-FOUND",
-            "MCP-ERR-UNSUPPORTED",
-            "SQL-ERR-SYNTAX",
-            "SQL-ERR-READONLY",
-            "SQL-ERR-LOCKED",
-            "SQL-ERR-CONSTRAINT"
+            "MCP-ERR-UNSUPPORTED"
           ]
         },
         "message": { "type": "string" },

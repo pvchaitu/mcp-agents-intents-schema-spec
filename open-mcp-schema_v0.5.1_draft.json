@@ -1,0 +1,255 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OpenMCPSpec",
+    "description": "v0.5.2: The Master Spec. Restores 100% of V0.4 Discovery/Analytics/Testing detail while maintaining V0.5 Stateful Envelopes and Recursive Input Schemas. (SQL-Specifics Excluded).",
+    "type": "object",
+    "properties": {
+      "openmcpspec": { "type": "string", "default": "v0.5.1" },
+      "info": { "$ref": "#/definitions/infoBlock" },
+      "server": { "$ref": "#/definitions/serverConfig" },
+      "envelope": { "$ref": "#/definitions/protocolEnvelope" },
+      "intents": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/intentDefinition" }
+      },
+      "enumeration": { "$ref": "#/definitions/enumerationConfig" },
+      "lifecycle": { "$ref": "#/definitions/lifecycleConfig" },
+      "testing": { "$ref": "#/definitions/testingConfig" },
+      "analytics": { "$ref": "#/definitions/analyticsConfig" }
+    },
+  
+    "required": ["openmcpspec", "info", "server", "intents", "enumeration"],
+  
+    "definitions": {
+      "infoBlock": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["title", "version"]
+      },
+  
+      "serverConfig": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "hostname": { "type": "string" },
+          "port": { "type": "integer" },
+          "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss", "sse"] },
+          "base_path": { "type": "string" },
+          "endpoints": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["streaming", "sampling", "elicitation", "transactions", "async_callbacks"] }
+          },
+          "state_policy": {
+            "type": "object",
+            "properties": {
+              "session_ttl_ms": { "type": "integer" },
+              "persistence": { "type": "string", "enum": ["ephemeral", "persistent", "hybrid"] }
+            }
+          },
+          "auth": { "$ref": "#/definitions/authConfig" }
+        },
+        "required": ["name", "hostname", "port", "protocol"]
+      },
+  
+      "authConfig": {
+        "type": "object",
+        "properties": {
+          "methods": { "type": "array", "items": { "type": "string", "enum": ["mtls","oidc","jwt","hmac"] } },
+          "audience": { "type": "string" },
+          "jwks_uri": { "type": "string", "format": "uri" },
+          "token_scopes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "protocolEnvelope": {
+        "type": "object",
+        "description": "Stateful and Traceable envelopes.",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "intent": { "type": "string" },
+              "parameters": { "type": "object" },
+              "deadline_ms": { "type": "integer" },
+              "idempotency_key": { "type": "string" },
+              "trace_id": { "type": "string" },
+              "session_id": { "type": "string" },
+              "transaction_id": { "type": "string" },
+              "cancellation_token": { "type": "string" }
+            },
+            "required": ["id","intent","parameters"]
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "status": { "type": "string", "enum": ["success","error","partial","accepted"] },
+              "job_id": { "type": "string" },
+              "data": { "type": "object" },
+              "state_snapshot": { "type": "object" },
+              "progress": { "type": "object", "properties": { "pct": { "type": "number" } } },
+              "trace_id": { "type": "string" },
+              "error": { "$ref": "#/definitions/errorEnvelope" }
+            },
+            "required": ["id","status"]
+          },
+          "stream_chunk": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "chunk_type": { "type": "string", "enum": ["token","row_batch","log","progress"] },
+              "is_final": { "type": "boolean", "default": false },
+              "payload": { "type": "object" },
+              "sequence": { "type": "integer" }
+            }
+          }
+        }
+      },
+  
+      "intentDefinition": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "input_schema": { "type": "object", "description": "Full recursive JSON Schema." },
+          "governance": {
+            "type": "object",
+            "additionalProperties": { "$ref": "#/definitions/parameterMetadata" }
+          },
+          "semantic_profile": { "$ref": "#/definitions/semanticProfile" },
+          "operational_profile": { "$ref": "#/definitions/operationalProfile" },
+          "workflow_hints": { "$ref": "#/definitions/workflowHints" },
+          "responses": {
+            "type": "object",
+            "properties": {
+              "success": { "type": "object", "properties": { "schema": { "type": "object" }, "examples": { "type": "array" } } },
+              "error": { "$ref": "#/definitions/errorEnvelope" }
+            }
+          },
+          "metadata": { "$ref": "#/definitions/intentMetadata" }
+        },
+        "required": ["name", "responses"]
+      },
+  
+      "parameterMetadata": {
+        "type": "object",
+        "description": "V0.4.1 Detailed Governance.",
+        "properties": {
+          "pii": { "type": "boolean" },
+          "gdpr_sensitive": { "type": "boolean" },
+          "dependencies": { "type": "array", "items": { "type": "string" } },
+          "audit_required": { "type": "boolean", "default": false }
+        }
+      },
+  
+      "intentMetadata": {
+        "type": "object",
+        "description": "Full restoration of V0.4.1 Contextual Fields.",
+        "properties": {
+          "roles": { "type": "array", "items": { "type": "string" } },
+          "security": { "type": "array", "items": { "type": "string" } },
+          "nlp_hints": { "type": "array", "items": { "type": "string" } },
+          "version": { "type": "string" },
+          "deprecated": { "type": "boolean" },
+          "sunset_date": { "type": "string", "format": "date" },
+          "migration_hint": { "type": "string" },
+          "rbac_scopes": { "type": "array", "items": { "type": "string" } },
+          "data_residency": { "type": "string", "enum": ["EU", "US", "APAC", "Global"] },
+          "audit_hooks": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "errorEnvelope": {
+        "type": "object",
+        "description": "Protocol Errors Only (Excluded SQL Specifics).",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "MCP-ERR-INVALID-REQUEST", "MCP-ERR-AUTH-FAILED", "MCP-ERR-QUOTA-EXCEEDED",
+              "MCP-ERR-CANCELLED", "MCP-ERR-TIMEOUT", "MCP-ERR-NOT-FOUND",
+              "MCP-ERR-UNSUPPORTED", "STATE-EXPIRED", "BUSINESS-RULE-VIOLATION", "PRECONDITION-FAILED"
+            ]
+          },
+          "message": { "type": "string" },
+          "details": { "type": "object" },
+          "payload_schema": { "type": "object" },
+          "retryable": { "type": "boolean" },
+          "recovery_hints": { "type": "array", "items": { "type": "string" } },
+          "correlation_id": { "type": "string" },
+          "standardized": { "type": "boolean", "default": true }
+        },
+        "required": ["code", "message"]
+      },
+  
+      "enumerationConfig": {
+        "type": "object",
+        "description": "Full Restoration of V0.4 Discovery detail.",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "filters": {
+            "type": "object",
+            "properties": {
+              "categories": { "type": "array", "items": { "type": "string" } },
+              "roles": { "type": "array", "items": { "type": "string" } },
+              "deprecated": { "type": "boolean" }
+            }
+          },
+          "pagination": {
+            "type": "object",
+            "properties": {
+              "cursor": { "type": "string" },
+              "limit": { "type": "integer" },
+              "has_more": { "type": "boolean" }
+            }
+          },
+          "versioning": {
+            "type": "object",
+            "properties": {
+              "schema_version": { "type": "string" },
+              "compatibility": { "type": "string" },
+              "migration_paths": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "capability_tags": { "type": "array", "items": { "type": "string" } },
+          "intent_groups": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "testingConfig": {
+        "type": "object",
+        "description": "Full Restoration of V0.4 Test Suites.",
+        "properties": {
+          "mock_data": { "type": "object" },
+          "validation_cases": { "type": "array", "items": { "type": "string" } },
+          "bdd_cases": { "type": "array", "items": { "type": "string" } },
+          "conformance_tests": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "analyticsConfig": {
+        "type": "object",
+        "description": "Full Restoration of V0.4 Monitoring detail.",
+        "properties": {
+          "logging": { "type": "boolean" },
+          "metrics": { "type": "array", "items": { "type": "string" } },
+          "monitoring_hooks": { "type": "array", "items": { "type": "string" } },
+          "trace_id_support": { "type": "boolean" },
+          "usage_quota": { "type": "integer" },
+          "latency_sla_ms": { "type": "integer" }
+        }
+      },
+  
+      "semanticProfile": { "type": "object", "properties": { "side_effects": { "type": "string" }, "idempotent": { "type": "boolean" }, "billing_impact": { "type": "boolean" } } },
+      "operationalProfile": { "type": "object", "properties": { "avg_latency_ms": { "type": "integer" }, "p95_latency_ms": { "type": "integer" }, "cost_units": { "type": "integer" } } },
+      "workflowHints": { "type": "object", "properties": { "compensation_intent": { "type": "string" }, "requires_context": { "type": "array", "items": { "type": "string" } } } },
+      "lifecycleConfig": { "type": "object", "properties": { "changelog": { "type": "array", "items": { "type": "string" } }, "compatibility": { "type": "string" } } }
+    }
+  }

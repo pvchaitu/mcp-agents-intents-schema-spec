@@ -1,0 +1,156 @@
+{
+    "openmcpspec": "v0.8.0",
+    "info": {
+      "title": "GitHub Enterprise MCP Server",
+      "version": "1.4.2",
+      "description": "Comprehensive GitHub integration for Repository, Issue, and PR management with built-in ACI and Governance.",
+      "compatibility": "^v0.8.0"
+    },
+    "server": {
+      "name": "github-mcp-prod",
+      "hostname": "mcp.github.internal",
+      "port": 443,
+      "protocol": "https",
+      "base_path": "/v1",
+      "capabilities": ["streaming", "async_callbacks", "transactions"],
+      "auth": {
+        "methods": ["OAuth2", "PersonalAccessToken"],
+        "global_scopes": ["repo", "user", "workflow"]
+      },
+      "rate_limits": {
+        "global": {
+          "limit": 5000,
+          "retry_after_hint_ms": 1000
+        }
+      },
+      "observability": {
+        "trace_header": "X-GitHub-Delivery",
+        "slos": {
+          "p95_ms": 450,
+          "availability": 0.999
+        }
+      }
+    },
+    "intents": [
+      {
+        "name": "create_issue",
+        "description": "Creates a new issue in a specified repository.",
+        "category": "collaboration",
+        "parameters": [
+          {
+            "name": "owner",
+            "type": "string",
+            "description": "The account owner of the repository.",
+            "required": true,
+            "pattern": "^[a-zA-Z0-9-]+$"
+          },
+          {
+            "name": "repo",
+            "type": "string",
+            "description": "The name of the repository.",
+            "required": true
+          },
+          {
+            "name": "title",
+            "type": "string",
+            "description": "The title of the issue.",
+            "required": true,
+            "maximum": 256
+          },
+          {
+            "name": "body",
+            "type": "string",
+            "description": "The contents of the issue.",
+            "pii": false
+          },
+          {
+            "name": "labels",
+            "type": "array",
+            "items": { "type": "string" }
+          }
+        ],
+        "validation_logic": {
+          "rules": [
+            {
+              "if_param": "labels",
+              "operator": "in",
+              "value": ["bug", "security"],
+              "then_require": ["body"]
+            }
+          ]
+        },
+        "responses": {
+          "success": {
+            "schema": {
+              "type": "object",
+              "properties": {
+                "id": { "type": "integer" },
+                "node_id": { "type": "string" },
+                "html_url": { "type": "string", "format": "uri" },
+                "state": { "type": "string", "enum": ["open", "closed"] }
+              }
+            }
+          },
+          "error": {
+            "code": "MCP-ERR-INVALID-REQUEST",
+            "message": "Validation failed for issue creation",
+            "retryable": false,
+            "recovery_hints": ["Check repository permissions", "Ensure owner name is correct"]
+          }
+        },
+        "governance": {
+          "pii_redaction": true,
+          "policy_refs": [
+            {
+              "name": "corporate-content-policy",
+              "engine_ref": "opa://internal/github/content-filter"
+            }
+          ]
+        },
+        "operational_profile": {
+          "avg_latency_ms": 120,
+          "cost_units": 1
+        }
+      },
+      {
+        "name": "query_commits",
+        "description": "Search and retrieve commit history with PII safety.",
+        "category": "vcs",
+        "parameters": [
+          {
+            "name": "path",
+            "type": "string",
+            "description": "The file path to filter commits."
+          },
+          {
+            "name": "author",
+            "type": "string",
+            "pii": true,
+            "gdpr_sensitive": true
+          }
+        ],
+        "governance": {
+          "pii_redaction": true
+        }
+      }
+    ],
+    "enumeration": {
+      "facets": ["vcs", "collaboration", "admin"],
+      "intent_summary": {
+        "name": "GitHub Core Suite",
+        "stability": "stable"
+      },
+      "conformance_tests": [
+        {
+          "id": "GH-AUTH-TEST",
+          "description": "Verifies OAuth2 handshake",
+          "uri": "https://tests.github.com/mcp/auth"
+        }
+      ]
+    },
+    "analytics": {
+      "logging": true,
+      "metrics": ["api_calls", "rate_limit_remaining"],
+      "latency_sla_ms": 500
+    }
+  }

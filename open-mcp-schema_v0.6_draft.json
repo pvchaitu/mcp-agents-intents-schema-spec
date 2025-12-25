@@ -1,0 +1,254 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "title": "OpenMCPSpec",
+    "description": "v0.6.0: The Unified Master Spec. Merges 100% of features from v0.2-v0.5.1, including Discovery, Analytics, Testing, Stateful Envelopes, Recursive Schemas, and Full Error Taxonomy.",
+    "type": "object",
+    "properties": {
+      "openmcpspec": { "type": "string", "default": "v0.6.0" },
+      "info": { "$ref": "#/definitions/infoBlock" },
+      "server": { "$ref": "#/definitions/serverConfig" },
+      "envelope": { "$ref": "#/definitions/protocolEnvelope" },
+      "intents": {
+        "type": "array",
+        "items": { "$ref": "#/definitions/intentDefinition" }
+      },
+      "enumeration": { "$ref": "#/definitions/enumerationConfig" },
+      "lifecycle": { "$ref": "#/definitions/lifecycleConfig" },
+      "testing": { "$ref": "#/definitions/testingConfig" },
+      "analytics": { "$ref": "#/definitions/analyticsConfig" }
+    },
+  
+    "required": ["openmcpspec", "info", "server", "intents", "enumeration"],
+  
+    "definitions": {
+      "infoBlock": {
+        "type": "object",
+        "properties": {
+          "title": { "type": "string" },
+          "version": { "type": "string" },
+          "description": { "type": "string" }
+        },
+        "required": ["title", "version"]
+      },
+  
+      "serverConfig": {
+        "type": "object",
+        "description": "Connection and capability negotiation block (Consolidated from v0.4/v0.5).",
+        "properties": {
+          "name": { "type": "string" },
+          "hostname": { "type": "string" },
+          "port": { "type": "integer" },
+          "protocol": { "type": "string", "enum": ["http", "https", "ws", "wss", "sse"] },
+          "base_path": { "type": "string" },
+          "endpoints": { "type": "array", "items": { "type": "string", "format": "uri" } },
+          "capabilities": {
+            "type": "array",
+            "items": { "type": "string", "enum": ["streaming", "sampling", "elicitation", "transactions", "async_callbacks"] }
+          },
+          "state_policy": {
+            "type": "object",
+            "properties": {
+              "session_ttl_ms": { "type": "integer" },
+              "persistence": { "type": "string", "enum": ["ephemeral", "persistent", "hybrid"] }
+            }
+          },
+          "auth": { "$ref": "#/definitions/authConfig" }
+        },
+        "required": ["name", "hostname", "port", "protocol"]
+      },
+  
+      "authConfig": {
+        "type": "object",
+        "description": "Authentication methods supported (from v0.3/v0.4).",
+        "properties": {
+          "methods": { "type": "array", "items": { "type": "string", "enum": ["mtls","oidc","jwt","hmac"] } },
+          "audience": { "type": "string" },
+          "jwks_uri": { "type": "string", "format": "uri" },
+          "token_scopes": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "protocolEnvelope": {
+        "type": "object",
+        "description": "Standardized envelopes for stateful and async interactions (from v0.3/v0.5).",
+        "properties": {
+          "request": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "intent": { "type": "string" },
+              "parameters": { "type": "object" },
+              "deadline_ms": { "type": "integer" },
+              "idempotency_key": { "type": "string" },
+              "trace_id": { "type": "string" },
+              "session_id": { "type": "string" },
+              "transaction_id": { "type": "string" },
+              "cancellation_token": { "type": "string" }
+            },
+            "required": ["id","intent","parameters"]
+          },
+          "response": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "status": { "type": "string", "enum": ["success", "error", "partial"] },
+              "data": { "type": "object" },
+              "error": { "$ref": "#/definitions/errorEnvelope" },
+              "progress": { "type": "object", "properties": { "pct": { "type": "number" }, "message": { "type": "string" } } },
+              "trace_id": { "type": "string" }
+            },
+            "required": ["id", "status"]
+          },
+          "stream_chunk": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "chunk_type": { "type": "string", "enum": ["token", "row_batch", "log", "progress"] },
+              "payload": { "type": "object" },
+              "sequence": { "type": "integer" }
+            }
+          }
+        }
+      },
+  
+      "intentDefinition": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "description": { "type": "string" },
+          "category": { "type": "string" },
+          "parameters": {
+            "type": "array",
+            "items": { "$ref": "#/definitions/parameterDefinition" }
+          },
+          "response": {
+            "type": "object",
+            "description": "JSON Schema of the success data object.",
+            "properties": { "schema": { "type": "object" } }
+          },
+          "semantic_profile": { "$ref": "#/definitions/semanticProfile" },
+          "operational_profile": { "$ref": "#/definitions/operationalProfile" }
+        }
+      },
+  
+      "parameterDefinition": {
+        "type": "object",
+        "description": "Recursive input schema support (from v0.5).",
+        "properties": {
+          "name": { "type": "string" },
+          "type": { "type": "string" },
+          "description": { "type": "string" },
+          "required": { "type": "boolean" },
+          "default": {},
+          "pii": { "type": "boolean" },
+          "gdpr_sensitive": { "type": "boolean" },
+          "enum": { "type": "array" },
+          "pattern": { "type": "string" },
+          "format": { "type": "string" },
+          "minimum": { "type": "number" },
+          "maximum": { "type": "number" },
+          "items": { "$ref": "#/definitions/parameterDefinition" },
+          "properties": { "type": "object", "additionalProperties": { "$ref": "#/definitions/parameterDefinition" } }
+        }
+      },
+  
+      "semanticProfile": {
+        "type": "object",
+        "properties": {
+          "side_effects": { "type": "string" },
+          "idempotent": { "type": "boolean" },
+          "billing_impact": { "type": "boolean" }
+        }
+      },
+  
+      "operationalProfile": {
+        "type": "object",
+        "properties": {
+          "avg_latency_ms": { "type": "integer" },
+          "p95_latency_ms": { "type": "integer" },
+          "cost_units": { "type": "integer" }
+        }
+      },
+  
+      "enumerationConfig": {
+        "type": "object",
+        "description": "Discovery and grouping configuration (Restored v0.2 depth).",
+        "properties": {
+          "enabled": { "type": "boolean" },
+          "intent_groups": { "type": "array", "items": { "type": "string" } },
+          "versioning": {
+            "type": "object",
+            "properties": {
+              "schema_version": { "type": "string" },
+              "compatibility": { "type": "string" },
+              "migration_paths": { "type": "array", "items": { "type": "string" } }
+            }
+          },
+          "capability_tags": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "lifecycleConfig": {
+        "type": "object",
+        "properties": {
+          "changelog": { "type": "array", "items": { "type": "string" } },
+          "compatibility": { "type": "string" },
+          "deprecation_policy": {
+            "type": "object",
+            "properties": {
+              "effective_date": { "type": "string", "format": "date" },
+              "is_deprecated": { "type": "boolean" },
+              "sunset_date": { "type": "string", "format": "date" }
+            }
+          }
+        }
+      },
+  
+      "testingConfig": {
+        "type": "object",
+        "description": "Full Restoration of Testing detail (v0.2/v0.4).",
+        "properties": {
+          "mock_data": { "type": "object" },
+          "validation_cases": { "type": "array", "items": { "type": "string" } },
+          "bdd_cases": { "type": "array", "items": { "type": "string" } },
+          "conformance_tests": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+  
+      "analyticsConfig": {
+        "type": "object",
+        "description": "Full Restoration of Monitoring detail (v0.4).",
+        "properties": {
+          "logging": { "type": "boolean" },
+          "metrics": { "type": "array", "items": { "type": "string" } },
+          "monitoring_hooks": { "type": "array", "items": { "type": "string" } },
+          "trace_id_support": { "type": "boolean" },
+          "usage_quota": { "type": "integer" },
+          "latency_sla_ms": { "type": "integer" }
+        }
+      },
+  
+      "errorEnvelope": {
+        "type": "object",
+        "description": "Consolidated Error Taxonomy (v0.3-v0.5).",
+        "properties": {
+          "code": {
+            "type": "string",
+            "enum": [
+              "MCP-ERR-INVALID-REQUEST", "MCP-ERR-AUTH-FAILED", "MCP-ERR-QUOTA-EXCEEDED",
+              "MCP-ERR-CANCELLED", "MCP-ERR-TIMEOUT", "MCP-ERR-NOT-FOUND", "MCP-ERR-UNSUPPORTED",
+              "SQL-ERR-SYNTAX", "SQL-ERR-READONLY", "SQL-ERR-LOCKED", "SQL-ERR-CONSTRAINT",
+              "STATE-EXPIRED", "BUSINESS-RULE-VIOLATION", "PRECONDITION-FAILED"
+            ]
+          },
+          "message": { "type": "string" },
+          "details": { "type": "object" },
+          "payload_schema": { "type": "object", "description": "Defines the JSON Schema of the details object." },
+          "retryable": { "type": "boolean" },
+          "recovery_hints": { "type": "array", "items": { "type": "string" } },
+          "correlation_id": { "type": "string" }
+        },
+        "required": ["code", "message"]
+      }
+    }
+  }

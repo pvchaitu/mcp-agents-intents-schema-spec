@@ -33,39 +33,47 @@ COMPANY_DB_SCHEMA = {
 }
 
 # --- Function to load configuration from YAML file ---
-import yaml
-
-CONFIG_FILE = "config.yaml"
-
 def load_config(config_file: str) -> Dict[str, Any]:
     """
-    Loads configuration settings from a real config.yaml file.
+    Loads configuration settings from the attached config.yaml, 
+    mapping 'base_url' to 'ollama_host', 'model' to 'ollama_model', and DB details.
     """
+    # Simulate reading the content of the attached config.yaml
+    config_content = """
+# config.yaml
+llm_config:
+  model: "qwen3-coder:480b-cloud"
+  base_url: "https://ollama.com"
+  api_key: "87657118b0e845799a90429e4c59e5b4.9EtOiJsqRkZep37t3JpGUmVk"
+  keep_alive: "5m"
+  format: "json"
+mcp_config:
+  spec_path: "sqlite-mcp-spec_v0.2.json"
+  db_path: "company_data.db"
+  db_alias: "company_db"
+"""
     try:
-        with open(config_file, "r") as f:
-            full_config = yaml.safe_load(f)
-
+        full_config = load(config_content, Loader=Loader)
         llm_config = full_config.get("llm_config", {})
         mcp_config = full_config.get("mcp_config", {})
-
+        
+        # Map the YAML fields to the script's internal config dictionary
         return {
             "ollama_host": llm_config.get("base_url", "http://localhost:11434"),
             "ollama_model": llm_config.get("model", "llama2"),
-            "api_key": llm_config.get("api_key"),
+            "api_key": llm_config.get("api_key", None),
             "db_path": mcp_config.get("db_path", "company_data.db"),
-            "db_alias": mcp_config.get("db_alias", "company_db"),
-            "spec_path": mcp_config.get("spec_path", "sqlite-mcp-spec_v0.8_staging.json")
+            "db_alias": mcp_config.get("db_alias", "company_db")
         }
-
+        
     except Exception as e:
-        print(f"Warning: Could not load config.yaml. Using defaults. Error: {e}")
+        print(f"Warning: Could not process configuration. Using default values. Error: {e}")
         return {
             "ollama_host": "http://localhost:11434",
             "ollama_model": "llama2",
             "api_key": None,
             "db_path": "company_data.db",
-            "db_alias": "company_db",
-            "spec_path": "sqlite-mcp-spec_v0.8_staging.json"
+            "db_alias": "company_db"
         }
 
 # Mock MCP Server Intent Definition (Remains unchanged for core tests)
