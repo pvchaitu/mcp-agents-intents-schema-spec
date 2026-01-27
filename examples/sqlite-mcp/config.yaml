@@ -4,7 +4,7 @@
 llm_config:
   model: "qwen3-coder:480b-cloud" # The LLM model to use
   base_url: "https://ollama.com"     # The base URL for the remote Ollama service
-  api_key: "9fde1446fc9e4609a0ab4ac6eee6365f.qtXc1HtQucwVj0GCY0EDzsl2" # Pseudo API key (set this as OPENAI_API_KEY environment variable if needed)
+  api_key: "apikey" # Pseudo API key (set this as OPENAI_API_KEY environment variable if needed)
   keep_alive: "5m"
   format: "json"
 
