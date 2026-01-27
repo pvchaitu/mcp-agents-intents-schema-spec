@@ -18,6 +18,7 @@ def load_config(config_file: str) -> Dict[str, Any]:
             "ollama_host": str(llm_cfg.get("base_url")).strip().rstrip('/'),
             "ollama_model": llm_cfg.get("model"),
             "api_key": str(llm_cfg.get("api_key", "")).strip(),
+            #"api_key": str("%OLLAMA_API_KEY%").strip(),
             "spec_path": mcp_cfg.get("spec_path", "sqlite-mcp-spec_v0.8_revised_staging.json")
         }
     except Exception:
@@ -33,6 +34,12 @@ def load_config(config_file: str) -> Dict[str, Any]:
 
 def run_ollama_inference(model: str, system_prompt: str, user_prompt: str, config: Dict[str, Any]) -> Tuple[str, float]:
     url = f"{config['ollama_host']}/api/chat"
+    # FIX: Added Authorization headers and Content-Type
+    headers = {
+        "Content-Type": "application/json"
+    }
+    if config["api_key"]:
+        headers["Authorization"] = f"Bearer {config['api_key']}"
     payload = {
         "model": model, 
         "messages": [
@@ -45,8 +52,10 @@ def run_ollama_inference(model: str, system_prompt: str, user_prompt: str, confi
 
     start = time.perf_counter()
     try:
-        response = requests.post(url, json=payload, timeout=30)
+        #print(f"###DEBUG: Sending Request to {url} with payload: {json.dumps(payload)}")
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
         content = response.json().get('message', {}).get('content', '').strip()
+        #print(f"###DEBUG: Response Content: {content}")
         return content, time.perf_counter() - start
     except Exception as e:
         return f"ERROR: {str(e)}", 0.0
