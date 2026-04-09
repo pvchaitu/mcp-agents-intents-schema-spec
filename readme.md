@@ -5,6 +5,7 @@
 OpenMCPSpec is a schema standard for Model Context Protocol (MCP) servers and agents.  
 It defines how intents, parameters, responses, metadata, enumeration, and server connection details are described, enabling large language model (LLM) agents to autodiscover and interact with MCP servers in a consistent and secure way.  
 This specification is designed to support **System Reliability** (via standardized envelopes and tracing) and **LLM Governance** (via explicit data sensitivity flags) required for production implementations.
+OpenMCPSpec has gone through Acceptance during peer reviews for ICSCCC2026 Conferencee to be held in Jalandhar. More news to follow soon.
 
 ## **🧩 Schema Sections**
 
